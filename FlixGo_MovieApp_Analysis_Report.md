@@ -48,27 +48,6 @@ FlixgoMobile/MovieApp/
   - `/actor/[id]` - Thông tin diễn viên
   - `/category/[genre]` - Danh mục theo thể loại
 
-### 3. App Startup & Splash Screen
-
-**Splash Screen Implementation**:
-- **Custom Splash Screen**: `components/SplashScreen.tsx`
-- **Integration**: Tích hợp vào `app/_layout.tsx`
-- **Configuration**: Cấu hình trong `app.json` với expo-splash-screen plugin
-
-**Startup Flow**:
-1. **Native Splash Screen**: Hiển thị ngay khi app khởi động (expo-splash-screen)
-2. **Custom Splash Screen**: Component tùy chỉnh với animation
-3. **Font Loading**: Đợi fonts load hoàn tất
-4. **Main App**: Chuyển sang ứng dụng chính
-
-**Splash Screen Features**:
-- **Background**: Dark theme (`#121219`) với pattern dots
-- **Logo Animation**: FlixGo logo với fade + scale + rotate effects
-- **Text Animation**: App name và subtitle với fade in
-- **Loading Indicator**: Animated dots với pulse effect
-- **Duration**: ~4-5 giây total animation time
-- **Smooth Transition**: Fade out khi chuyển sang main app
-
 ---
 
 ## THƯ VIỆN VÀ DEPENDENCIES
@@ -195,23 +174,6 @@ FlixgoMobile/MovieApp/
 - **Chức năng**: Animated wave effect
 - **Usage**: Video player play button animation
 
-#### 5. SplashScreen
-**File**: `components/SplashScreen.tsx` (243 lines)
-- **Chức năng**: Custom splash screen với animation
-- **Features**:
-  - Logo FlixGo với hiệu ứng fade + scale + rotate
-  - Background pattern với các chấm đỏ ngẫu nhiên
-  - Text animation cho app name và subtitle
-  - Loading dots với pulse effect
-  - Smooth fade out transition
-  - Tích hợp vào app startup flow
-- **Animation Sequence**:
-  1. Logo entrance (fade + scale + rotate)
-  2. Text fade in
-  3. Pulse effect (2 iterations)
-  4. Hold và fade out
-- **Duration**: ~4-5 giây total animation
-
 ---
 
 ## SCREENS VÀ PAGES
@@ -229,16 +191,6 @@ FlixgoMobile/MovieApp/
 - Filter states (genre, year, studio)
 - Expandable content view
 - MovieBox integration
-
-**Filter System**:
-- **Modal-based filtering**: Genre, Year, Studio selection
-- **Apply functionality**: Fixed bug where filter selections weren't applied
-- **Filter logic**: 
-  - Genre filtering: Movies/TV Shows separation + category filtering
-  - Year filtering: Exact year match
-  - Studio filtering: Platform-specific content
-- **UI Integration**: Filter modal với tab-based selection interface
-- **Bug Fix**: Added `setActiveCategory('genre')` to Apply button to ensure filtered content displays
 
 ### 2. Authentication Screens
 
@@ -691,55 +643,6 @@ npm run web        # Run on web
 
 ---
 
-## BUG FIXES VÀ IMPROVEMENTS
-
-### Recent Updates (Latest Version)
-
-#### 1. Filter System Bug Fix
-**Issue**: Filter modal trong Recently Updated section không áp dụng filter sau khi nhấn Apply
-**Root Cause**: Thiếu `setActiveCategory('genre')` trong Apply button handler
-**Solution**: 
-- Thêm `setActiveCategory('genre')` vào onPress handler của Apply button
-- Đảm bảo filtered content được hiển thị sau khi apply filter
-**Files Modified**: `app/(tabs)/index.tsx`
-**Impact**: Filter system hoạt động đúng, người dùng có thể lọc phim theo Genre, Year, Studio
-
-#### 2. Custom Splash Screen Implementation
-**Enhancement**: Thêm splash screen tùy chỉnh với animation đẹp mắt
-**Features Added**:
-- Custom SplashScreen component với animation sequence
-- Logo FlixGo với fade + scale + rotate effects
-- Background pattern với animated dots
-- Text animation cho app branding
-- Loading indicator với pulse effect
-- Smooth transition vào main app
-**Files Added**: `components/SplashScreen.tsx`
-**Files Modified**: `app/_layout.tsx`, `app.json`
-**Dependencies Added**: `expo-linear-gradient` (later removed for simplicity)
-**Impact**: Cải thiện user experience với splash screen chuyên nghiệp
-
-#### 3. App Configuration Updates
-**Configuration Changes**:
-- Cập nhật splash screen background color từ `#ffffff` thành `#121219`
-- Tích hợp custom splash screen vào app startup flow
-- Cấu hình splash screen duration và animation timing
-**Files Modified**: `app.json`
-
-### Technical Improvements
-- **Animation Performance**: Sử dụng `useNativeDriver: true` cho smooth animations
-- **Code Organization**: Tách splash screen thành component riêng biệt
-- **State Management**: Cải thiện filter state handling
-- **User Experience**: Smooth transitions và loading states
-
-### Testing & Validation
-- ✅ Filter functionality tested và working correctly
-- ✅ Splash screen animation tested trên multiple devices
-- ✅ App startup flow validated
-- ✅ No linting errors introduced
-- ✅ Cross-platform compatibility maintained
-
----
-
 ## KẾT LUẬN
 
 ### Điểm đã đạt được:
@@ -749,10 +652,6 @@ npm run web        # Run on web
 - ✅ Video player với tính năng đầy đủ
 - ✅ Internationalization support
 - ✅ Cross-platform compatibility
-- ✅ Custom splash screen với animation đẹp mắt
-- ✅ Filter system hoạt động đúng và user-friendly
-- ✅ Smooth app startup experience
-- ✅ Bug fixes và improvements được implement đúng cách
 
 ### Cần cải thiện:
 - 🔄 Backend API integration
