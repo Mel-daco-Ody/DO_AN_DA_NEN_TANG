@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert } from 'react-native';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,7 +42,7 @@ export default function MovieDetailsScreen() {
   const [unlikes, setUnlikes] = React.useState(0);
   const [liked, setLiked] = React.useState<boolean | null>(null);
   const [commentText, setCommentText] = React.useState('');
-  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([]);
+  const [comments, setComments] = React.useState<any[]>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
   
   // Backend data
@@ -166,7 +166,17 @@ export default function MovieDetailsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentInsetAdjustmentBehavior="automatic">
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        style={styles.container} 
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       {/* Header */}
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -192,8 +202,10 @@ export default function MovieDetailsScreen() {
       >
         <View style={styles.playerGradient} />
         <View style={styles.playerContent}>
-          <Text style={styles.playerTitle}>{safe(title)}</Text>
-          <Text style={styles.playerSubtitle}>{safe(categories)} • {safe(year)}</Text>
+        <Text style={styles.playerTitle}>{movieData?.title || safe(title)}</Text>
+        <Text style={styles.playerSubtitle}>
+          {movieData?.tags?.map((tag: any) => tag.tagName).join(' • ') || safe(categories)} • {movieData?.year || safe(year)}
+        </Text>
           <View style={styles.playButtonContainer}>
             <WaveAnimation isActive={!isPlayPressed} color="#e50914" size={60} />
             <Pressable 
@@ -217,21 +229,33 @@ export default function MovieDetailsScreen() {
       {/* Introduction Section - No Container */}
       <View style={styles.introSection}>
         <Text style={styles.sectionTitle}>{t('details.introduction')}</Text>
-        <Text style={styles.kv}>{t('details.release_year')}: <Text style={styles.kvVal}>{safe(year)}</Text></Text>
-        <Text style={styles.kv}>{t('details.duration')}: <Text style={styles.kvVal}>{safe(duration)}</Text></Text>
-        <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{safe(country)}</Text></Text>
-        <Text style={styles.kv}>{t('details.genre')}: <Text style={styles.kvVal}>Action, Thriller</Text></Text>
+        <Text style={styles.kv}>{t('details.release_year')}: <Text style={styles.kvVal}>{movieData?.year || safe(year)}</Text></Text>
+        <Text style={styles.kv}>{t('details.duration')}: <Text style={styles.kvVal}>{movieData?.duration || safe(duration)}</Text></Text>
+        <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{movieData?.region?.regionName || safe(country)}</Text></Text>
+        <Text style={styles.kv}>{t('details.genre')}: <Text style={styles.kvVal}>{movieData?.tags?.map((tag: any) => tag.tagName).join(', ') || 'Action, Thriller'}</Text></Text>
         <View style={styles.categoryLinks}>
-          <Pressable onPress={() => router.push('/category/Action' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.categoryLinkText}>Action</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/category/Thriller' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.categoryLinkText}>Thriller</Text>
-          </Pressable>
+          {movieData?.tags?.map((tag: any) => (
+            <Pressable key={tag.tagID} onPress={() => router.push(`/category/${tag.tagName}` as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+              <Text style={styles.categoryLinkText}>{tag.tagName}</Text>
+            </Pressable>
+          )) || (
+            <>
+              <Pressable onPress={() => router.push('/category/Action' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.categoryLinkText}>Action</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push('/category/Thriller' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.categoryLinkText}>Thriller</Text>
+              </Pressable>
+            </>
+          )}
         </View>
-        <Text style={styles.kv}>{t('details.actors')}: <Text style={styles.kvVal}>{movie?.cast?.map((cast: any) => cast.characterName || cast.fullName).join(', ') || 'N/A'}</Text></Text>
+        <Text style={styles.kv}>{t('details.actors')}: <Text style={styles.kvVal}>{movieData?.actors?.map((actor: any) => actor.fullName).join(', ') || movie?.cast?.map((cast: any) => cast.characterName || cast.fullName).join(', ') || 'N/A'}</Text></Text>
         <View style={styles.actorLinks}>
-          {movie?.cast?.slice(0, 3).map((cast: any, index: number) => (
+          {movieData?.actors?.map((actor: any) => (
+            <Pressable key={actor.personID} onPress={() => router.push(`/actor/${actor.personID}` as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+              <Text style={styles.actorLinkText}>{actor.fullName}</Text>
+            </Pressable>
+          )) || movie?.cast?.slice(0, 3).map((cast: any, index: number) => (
             <Pressable 
               key={cast.personID || index} 
               onPress={() => router.push(`/actor/${cast.personID}` as any)} 
@@ -241,76 +265,34 @@ export default function MovieDetailsScreen() {
             </Pressable>
           ))}
         </View>
-        <Text style={[styles.sectionText, { marginTop: 8 }]}>{safe(description, 'N/A')}</Text>
+        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || safe(description, 'N/A')}</Text>
       </View>
 
-      {/* Rating Section */}
-      <View style={styles.container}>
-        <Text style={styles.sectionTitle}>Rate This Movie</Text>
-        <View style={styles.ratingContainer}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <Pressable
-              key={star}
-              onPress={() => handleAddRating(star)}
-              style={styles.starButton}
-            >
-              <Ionicons 
-                name={userRating?.stars && star <= userRating.stars ? "star" : "star-outline"} 
-                size={24} 
-                color={userRating?.stars && star <= userRating.stars ? "#ffd166" : "#666"} 
-              />
-            </Pressable>
-          ))}
-        </View>
-        {userRating && (
-          <Text style={styles.ratingText}>You rated this movie {userRating.stars} star{userRating.stars > 1 ? 's' : ''}</Text>
-        )}
+      {/* Advertisement Banner - Full Width */}
+      <View style={styles.adBanner}>
+        <Pressable 
+          style={({ pressed }) => [styles.adContainer, pressed && { opacity: 0.9 }]}
+          onPress={() => {
+            // Handle ad click
+            console.log('Ad clicked');
+          }}
+        >
+          <ImageWithPlaceholder 
+            source={{ uri: 'https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=800&h=200&fit=crop' }}
+            style={styles.adImage}
+            showRedBorder={false}
+          />
+          <View style={styles.adOverlay}>
+            <Text style={styles.adTitle}>🎬 Netflix Originals</Text>
+            <Text style={styles.adSubtitle}>Xem phim mới nhất trên Netflix</Text>
+            <View style={styles.adBadge}>
+              <Text style={styles.adBadgeText}>QUẢNG CÁO</Text>
+            </View>
+          </View>
+        </Pressable>
       </View>
 
-      {/* Comments Section */}
-      <View style={styles.container}>
-        <Text style={styles.sectionTitle}>Comments</Text>
-        {authState.user ? (
-          <View style={styles.commentInputContainer}>
-            <TextInput
-              style={styles.commentInput}
-              placeholder="Add a comment..."
-              placeholderTextColor="#666"
-              multiline
-              numberOfLines={3}
-              onChangeText={setCommentText}
-              value={commentText}
-            />
-            <Pressable
-              style={styles.commentButton}
-              onPress={() => {
-                if (commentText.trim()) {
-                  handleAddComment(commentText.trim());
-                  setCommentText('');
-                }
-              }}
-            >
-              <Text style={styles.commentButtonText}>Post Comment</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Text style={styles.loginPrompt}>Please login to add comments</Text>
-        )}
-        
-        {comments.length > 0 ? (
-          <View style={styles.commentsList}>
-            {comments.map((comment: any, index: number) => (
-              <View key={comment.commentID || index} style={styles.commentItem}>
-                <Text style={styles.commentAuthor}>User {comment.userID}</Text>
-                <Text style={styles.commentContent}>{comment.content}</Text>
-                <Text style={styles.commentDate}>{new Date(comment.createdAt).toLocaleDateString()}</Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <Text style={styles.noComments}>No comments yet. Be the first to comment!</Text>
-        )}
-      </View>
+      {/* Advertisement Banner - Full Width */}
       <View style={styles.adBanner}>
         <Pressable 
           style={({ pressed }) => [styles.adContainer, pressed && { opacity: 0.9 }]}
@@ -334,29 +316,28 @@ export default function MovieDetailsScreen() {
         </Pressable>
       </View>
 
-      {/* Like / Unlike */}
+      {/* Rating Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('details.rating')}</Text>
-        <View style={styles.likeRow}>
-          <Pressable
-            onPress={() => {
-              if (liked === true) { setLiked(null); setLikes((n) => Math.max(0, n - 1)); }
-              else { setLiked(true); setLikes((n) => n + 1); if (liked === false) setUnlikes((n) => Math.max(0, n - 1)); }
-            }}
-            style={({ pressed }) => [styles.likeBtn, liked === true && styles.likeBtnActive, pressed && { opacity: 0.9 }]}
-          >
-            <Text style={[styles.likeText, liked === true && styles.likeTextActive]}>👍 {likes}</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              if (liked === false) { setLiked(null); setUnlikes((n) => Math.max(0, n - 1)); }
-              else { setLiked(false); setUnlikes((n) => n + 1); if (liked === true) setLikes((n) => Math.max(0, n - 1)); }
-            }}
-            style={({ pressed }) => [styles.likeBtn, liked === false && styles.likeBtnActive, pressed && { opacity: 0.9 }]}
-          >
-            <Text style={[styles.likeText, liked === false && styles.likeTextActive]}>👎 {unlikes}</Text>
-          </Pressable>
+        <Text style={styles.sectionTitle}>Rate This Movie</Text>
+        <View style={styles.ratingContainer}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Pressable
+              key={star}
+              onPress={() => handleAddRating(star)}
+              style={styles.starButton}
+            >
+              <Ionicons 
+                name={userRating?.stars && star <= userRating.stars ? "star" : "star-outline"} 
+                size={28} 
+                color={userRating?.stars && star <= userRating.stars ? "#ffd166" : "#666"} 
+              />
+            </Pressable>
+          ))}
         </View>
+        {userRating && (
+          <Text style={styles.ratingText}>You rated this movie {userRating.stars} star{userRating.stars > 1 ? 's' : ''}</Text>
+        )}
+        <Text style={styles.ratingSubtext}>Tap a star to rate this movie</Text>
       </View>
 
       {/* Comments */}
@@ -376,11 +357,31 @@ export default function MovieDetailsScreen() {
               style={styles.commentInput}
             />
             <Pressable
-              onPress={() => {
+              onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-                setComments((prev) => [{ author: 'Bạn', text }, ...prev]);
-                setCommentText('');
+                
+                try {
+                  const { movieAppApi } = await import('../../../services/mock-api');
+                  const commentData = {
+                    movieID: parseInt(id as string),
+                    userID: authState.user?.userID,
+                    content: text,
+                    parentID: null
+                  };
+                  
+                  const response = await movieAppApi.addComment(commentData);
+                  if (response.errorCode === 200) {
+                    // Reload comments to get updated list
+                    const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
+                    if (commentsResponse.errorCode === 200) {
+                      setComments(commentsResponse.data || []);
+                    }
+                    setCommentText('');
+                  }
+                } catch (error) {
+                  console.error('Error adding comment:', error);
+                }
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
@@ -391,19 +392,21 @@ export default function MovieDetailsScreen() {
         
         <View style={styles.commentsList}>
           {comments.map((c, idx) => (
-            <View key={idx} style={styles.commentItem}>
+            <View key={c.commentID || idx} style={styles.commentItem}>
               <View style={styles.commentAvatar}>
-                <Text style={styles.commentAvatarText}>{c.author.charAt(0).toUpperCase()}</Text>
+                <Text style={styles.commentAvatarText}>{c.userName?.charAt(0).toUpperCase() || 'U'}</Text>
               </View>
               <View style={styles.commentContent}>
                 <View style={styles.commentHeader}>
-                  <Text style={styles.commentAuthor}>{c.author}</Text>
-                  <Text style={styles.commentTime}>2 phút trước</Text>
+                  <Text style={styles.commentAuthor}>{c.userName || 'User'}</Text>
+                  <Text style={styles.commentTime}>
+                    {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
+                  </Text>
                 </View>
-                <Text style={styles.commentText}>{c.text}</Text>
+                <Text style={styles.commentText}>{c.content}</Text>
                 <View style={styles.commentActions}>
                   <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
-                    <Text style={styles.commentActionText}>👍 Thích</Text>
+                    <Text style={styles.commentActionText}>👍 {c.likeCount || 0}</Text>
                   </Pressable>
                   <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
                     <Text style={styles.commentActionText}>Trả lời</Text>
@@ -413,13 +416,14 @@ export default function MovieDetailsScreen() {
             </View>
           ))}
         </View>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#14141b', paddingTop: 0 }, // Add padding top for fixed header
+  container: { flex: 1, backgroundColor: '#14141b' },
   
   // Header
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
@@ -682,41 +686,34 @@ const styles = StyleSheet.create({
   },
   
   // Rating Section
-  ratingContainer: { flexDirection: 'row', justifyContent: 'center', marginVertical: 16 },
-  starButton: { marginHorizontal: 4 },
-  ratingText: { color: '#ffd166', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  ratingContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    marginVertical: 16,
+    gap: 8
+  },
+  starButton: { 
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  ratingText: { 
+    color: '#ffd166', 
+    fontSize: 16, 
+    fontWeight: '600',
+    textAlign: 'center', 
+    marginTop: 8 
+  },
+  ratingSubtext: { 
+    color: '#8e8e93', 
+    fontSize: 14, 
+    textAlign: 'center', 
+    marginTop: 4 
+  },
   
-  // Comments Section
-  commentInputContainer: { marginVertical: 16 },
-  commentInput: { 
-    backgroundColor: '#1c1c23', 
-    borderRadius: 8, 
-    padding: 12, 
-    color: '#fff', 
-    fontSize: 14,
-    textAlignVertical: 'top',
-    marginBottom: 12
-  },
-  commentButton: { 
-    backgroundColor: '#e50914', 
-    paddingVertical: 12, 
-    paddingHorizontal: 24, 
-    borderRadius: 8, 
-    alignSelf: 'flex-end' 
-  },
-  commentButtonText: { color: '#fff', fontWeight: '600' },
-  loginPrompt: { color: '#666', fontSize: 14, textAlign: 'center', marginVertical: 16 },
-  commentsList: { marginTop: 16 },
-  commentItem: { 
-    backgroundColor: '#1c1c23', 
-    padding: 12, 
-    borderRadius: 8, 
-    marginBottom: 8 
-  },
-  commentAuthor: { color: '#ffd166', fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  commentContent: { color: '#fff', fontSize: 14, marginBottom: 4 },
-  commentDate: { color: '#666', fontSize: 12 },
-  noComments: { color: '#666', fontSize: 14, textAlign: 'center', marginVertical: 16 },
 });
 
 

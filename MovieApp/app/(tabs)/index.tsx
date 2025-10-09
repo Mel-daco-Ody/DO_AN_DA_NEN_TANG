@@ -442,14 +442,32 @@ export default function HomeScreen() {
             keyExtractor={(item) => item.movieID.toString()}
             horizontal
             showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+            ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
             renderItem={({ item }) => (
               <Pressable
-                style={styles.movieCard}
+                style={({ pressed }) => [styles.featuredCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}
                 onPress={() => openDetails(item)}
               >
-                <Image source={{ uri: item.image }} style={styles.movieImage} contentFit="cover" />
-                <Text style={styles.movieTitle} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.movieRating}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+                <View style={styles.featuredImageContainer}>
+                  <ImageWithPlaceholder source={{ uri: item.image }} style={styles.featuredImage} showRedBorder={false} />
+                  <View style={styles.featuredOverlay}>
+                    <View style={styles.featuredBadge}>
+                      <Text style={styles.featuredBadgeText}>FEATURED</Text>
+                    </View>
+                    <View style={styles.featuredRating}>
+                      <Ionicons name="star" size={12} color="#ffd166" />
+                      <Text style={styles.featuredRatingText}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.featuredContent}>
+                  <Text style={styles.featuredTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.featuredYear}>{item.year || '2024'}</Text>
+                  <Text style={styles.featuredGenre} numberOfLines={1}>
+                    {item.tags?.map(tag => tag.tagName).join(' • ') || item.categories?.join(' • ') || 'Action'}
+                  </Text>
+                </View>
               </Pressable>
             )}
           />
@@ -465,14 +483,33 @@ export default function HomeScreen() {
             keyExtractor={(item) => item.movieID.toString()}
             horizontal
             showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+            ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
             renderItem={({ item }) => (
               <Pressable
-                style={styles.movieCard}
+                style={({ pressed }) => [styles.trendingCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}
                 onPress={() => openDetails(item)}
               >
-                <Image source={{ uri: item.image }} style={styles.movieImage} contentFit="cover" />
-                <Text style={styles.movieTitle} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.movieRating}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+                <View style={styles.trendingImageContainer}>
+                  <ImageWithPlaceholder source={{ uri: item.image }} style={styles.trendingImage} showRedBorder={false} />
+                  <View style={styles.trendingOverlay}>
+                    <View style={styles.trendingBadge}>
+                      <Ionicons name="trending-up" size={12} color="#e50914" />
+                      <Text style={styles.trendingBadgeText}>TRENDING</Text>
+                    </View>
+                    <View style={styles.trendingRating}>
+                      <Ionicons name="star" size={12} color="#ffd166" />
+                      <Text style={styles.trendingRatingText}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.trendingContent}>
+                  <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.trendingYear}>{item.year || '2024'}</Text>
+                  <Text style={styles.trendingGenre} numberOfLines={1}>
+                    {item.tags?.map(tag => tag.tagName).join(' • ') || item.categories?.join(' • ') || 'Action'}
+                  </Text>
+                </View>
               </Pressable>
             )}
           />
@@ -695,59 +732,61 @@ export default function HomeScreen() {
       />
 
       {/* Plans */}
-      <Text style={styles.sectionTitle}>
-        {authState.user?.subscription ? t('home.your_current_plan') : t('home.select_plan')}
-      </Text>
-      <View style={styles.plansRow}>
-        {authState.user?.subscription ? (
-          // Show current plan only
-          <Plan 
-            title={authState.user.subscription.plan === 'premium' ? t('plan.premium') : 
-                   authState.user.subscription.plan === 'cinematic' ? t('plan.cinematic') : t('plan.starter')} 
-            price={authState.user.subscription.plan === 'premium' ? '$19.99' : 
-                   authState.user.subscription.plan === 'cinematic' ? '$39.99' : t('plan.free')} 
-            features={authState.user.subscription.plan === 'premium' ? 
-              ["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"] :
-              authState.user.subscription.plan === 'cinematic' ?
-              ["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"] :
-              ["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
-            cta={t('plan.manage_plan')} 
-            highlight={authState.user.subscription.plan !== 'starter'}
-            onPress={() => router.push('/profile')} 
-            t={t}
-          />
-        ) : (
-          // Show all plans for selection
-          <>
+      <View style={styles.plansSection}>
+        <Text style={styles.sectionTitle}>
+          {authState.user?.subscription ? t('home.your_current_plan') : t('home.select_plan')}
+        </Text>
+        <View style={styles.plansRow}>
+          {authState.user?.subscription ? (
+            // Show current plan only
             <Plan 
-              title={t('plan.starter')} 
-              price={t('plan.free')} 
-              features={["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
-              cta={t('plan.choose_plan')} 
-              highlight={false}
-              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+              title={authState.user.subscription.plan === 'premium' ? t('plan.premium') : 
+                     authState.user.subscription.plan === 'cinematic' ? t('plan.cinematic') : t('plan.starter')} 
+              price={authState.user.subscription.plan === 'premium' ? '$19.99' : 
+                     authState.user.subscription.plan === 'cinematic' ? '$39.99' : t('plan.free')} 
+              features={authState.user.subscription.plan === 'premium' ? 
+                ["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"] :
+                authState.user.subscription.plan === 'cinematic' ?
+                ["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"] :
+                ["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
+              cta={t('plan.manage_plan')} 
+              highlight={authState.user.subscription.plan !== 'starter'}
+              onPress={() => router.push('/profile')} 
               t={t}
             />
-            <Plan 
-              title={t('plan.premium')} 
-              price="$19.99" 
-              features={["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"]} 
-              cta={t('plan.choose_plan')} 
-              highlight={false}
-              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-              t={t}
-            />
-            <Plan 
-              title={t('plan.cinematic')} 
-              price="$39.99" 
-              features={["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"]} 
-              cta={t('plan.choose_plan')} 
-              highlight={false}
-              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-              t={t}
-            />
-          </>
-        )}
+          ) : (
+            // Show all plans for selection
+            <>
+              <Plan 
+                title={t('plan.starter')} 
+                price={t('plan.free')} 
+                features={["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
+                cta={t('plan.choose_plan')} 
+                highlight={false}
+                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+                t={t}
+              />
+              <Plan 
+                title={t('plan.premium')} 
+                price="$19.99" 
+                features={["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"]} 
+                cta={t('plan.choose_plan')} 
+                highlight={true}
+                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+                t={t}
+              />
+              <Plan 
+                title={t('plan.cinematic')} 
+                price="$39.99" 
+                features={["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"]} 
+                cta={t('plan.choose_plan')} 
+                highlight={false}
+                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+                t={t}
+              />
+            </>
+          )}
+        </View>
       </View>
 
       {/* Partners (static) */}
@@ -767,14 +806,37 @@ export default function HomeScreen() {
 
 function Plan({ title, price, features, cta, highlight, onPress, t }: { title: string; price: string; features: string[]; cta: string; highlight?: boolean; onPress?: () => void; t: (key: string) => string }) {
   return (
-    <View style={[styles.plan, highlight && styles.planPremium]}>
-      <Text style={[styles.planTitle, highlight && styles.planTitlePremium]}>{title}</Text>
-      <Text style={[styles.planPrice, highlight && styles.planPricePremium]}>{price}</Text>
-      {features.map((f, idx) => (
-        <Text key={idx} style={styles.planFeature}>• {f}</Text>
-      ))}
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.primaryBtn, { alignSelf: 'stretch', marginTop: 12 }, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
-        <Text style={styles.primaryBtnText}>{cta}</Text>
+    <View style={[styles.planCard, highlight && styles.planCardHighlight]}>
+      {highlight && (
+        <View style={styles.planBadge}>
+          <Text style={styles.planBadgeText}>POPULAR</Text>
+        </View>
+      )}
+      <View style={styles.planHeader}>
+        <Text style={[styles.planTitle, highlight && styles.planTitleHighlight]}>{title}</Text>
+        <Text style={[styles.planPrice, highlight && styles.planPriceHighlight]}>{price}</Text>
+      </View>
+      <View style={styles.planFeatures}>
+        {features.map((f, idx) => (
+          <View key={idx} style={styles.planFeatureItem}>
+            <Ionicons 
+              name="checkmark-circle" 
+              size={16} 
+              color={highlight ? "#ffd166" : "#e50914"} 
+            />
+            <Text style={[styles.planFeatureText, highlight && styles.planFeatureTextHighlight]}>{f}</Text>
+          </View>
+        ))}
+      </View>
+      <Pressable 
+        onPress={onPress} 
+        style={({ pressed }) => [
+          styles.planButton, 
+          highlight && styles.planButtonHighlight,
+          pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }
+        ]}
+      >
+        <Text style={[styles.planButtonText, highlight && styles.planButtonTextHighlight]}>{cta}</Text>
       </Pressable>
     </View>
   );
@@ -802,10 +864,169 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginHorizontal: 16, marginBottom: 10 },
   sectionText: { color: '#c7c7cc', marginHorizontal: 16, marginBottom: 10, fontSize: 12 },
   sectionContainer: { marginBottom: 20 },
-  movieCard: { width: 120, marginRight: 12, marginLeft: 16 },
-  movieImage: { width: '100%', height: 160, borderRadius: 8 },
-  movieTitle: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 6, marginBottom: 2 },
-  movieRating: { color: '#ffd166', fontSize: 10, fontWeight: '600' },
+  
+  // Featured Movies Styles
+  featuredCard: { 
+    width: 150, 
+    backgroundColor: '#2b2b31', 
+    borderRadius: 12, 
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6
+  },
+  featuredImageContainer: { 
+    position: 'relative',
+    width: '100%',
+    height: 200
+  },
+  featuredImage: { 
+    width: '100%', 
+    height: '100%',
+    borderRadius: 12
+  },
+  featuredOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'space-between',
+    padding: 8
+  },
+  featuredBadge: {
+    backgroundColor: '#e50914',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start'
+  },
+  featuredBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5
+  },
+  featuredRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    alignSelf: 'flex-end'
+  },
+  featuredRatingText: {
+    color: '#ffd166',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 2
+  },
+  featuredContent: {
+    padding: 12
+  },
+  featuredTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4
+  },
+  featuredYear: {
+    color: '#8e8e93',
+    fontSize: 12,
+    marginBottom: 2
+  },
+  featuredGenre: {
+    color: '#e50914',
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  
+  // Trending Movies Styles
+  trendingCard: { 
+    width: 150, 
+    backgroundColor: '#2b2b31', 
+    borderRadius: 12, 
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6
+  },
+  trendingImageContainer: { 
+    position: 'relative',
+    width: '100%',
+    height: 200
+  },
+  trendingImage: { 
+    width: '100%', 
+    height: '100%',
+    borderRadius: 12
+  },
+  trendingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'space-between',
+    padding: 8
+  },
+  trendingBadge: {
+    backgroundColor: '#ffd166',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  trendingBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginLeft: 2
+  },
+  trendingRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    alignSelf: 'flex-end'
+  },
+  trendingRatingText: {
+    color: '#ffd166',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 2
+  },
+  trendingContent: {
+    padding: 12
+  },
+  trendingTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4
+  },
+  trendingYear: {
+    color: '#8e8e93',
+    fontSize: 12,
+    marginBottom: 2
+  },
+  trendingGenre: {
+    color: '#e50914',
+    fontSize: 11,
+    fontWeight: '600'
+  },
 
   tabsRow: { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 8 },
   tabBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: '#1c1c23', position: 'relative' },
@@ -816,9 +1037,9 @@ const styles = StyleSheet.create({
   filterBadgeText: { color: '#000', fontSize: 10, fontWeight: '700' },
 
   grid: { paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  card: { backgroundColor: '#121219', borderRadius: 10, overflow: 'hidden', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  card: { backgroundColor: '#2b2b31', borderRadius: 10, overflow: 'hidden', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   coverWrap: { width: '100%', aspectRatio: 2/3, position: 'relative' },
-  cover: { width: '100%', height: '100%' },
+  cover: { width: '100%', height: '100%', borderRadius: 12 },
   bookmarkButton: {
     position: 'absolute',
     top: 8,
@@ -839,20 +1060,122 @@ const styles = StyleSheet.create({
   cardBadges: { color: '#8e8e93', fontSize: 12 },
 
   nowCard: { width: 136 },
-  nowCover: { width: 136, height: 188, borderRadius: 10 },
+  nowCover: { width: 136, height: 188, borderRadius: 12 },
   nowTitle: { color: '#fff', fontWeight: '700', marginTop: 6, fontSize: 13 },
   nowCats: { color: '#a0a0a6', marginTop: 2, fontSize: 12 },
   nowEpisodes: { color: '#e50914', marginTop: 2, fontSize: 11, fontWeight: '600' },
   nowRate: { color: '#ffd166', marginTop: 3, fontWeight: '700' },
 
-  plansRow: { paddingHorizontal: 16, flexDirection: 'column' },
-  plan: { backgroundColor: '#121219', borderRadius: 10, padding: 12, marginBottom: 10 },
-  planPremium: { borderWidth: 1, borderColor: '#ffd166' },
-  planTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  planTitlePremium: { color: '#ffd166' },
-  planPrice: { color: '#fff', marginTop: 4, fontWeight: '700' },
-  planPricePremium: { color: '#ffd166' },
-  planFeature: { color: '#a0a0a6', marginTop: 4, fontSize: 12 },
+  plansRow: { paddingHorizontal: 16, flexDirection: 'column', gap: 6 },
+  
+  // Plans Section
+  plansSection: {
+    marginBottom: 30
+  },
+  
+  // Enhanced Plan Styles
+  planCard: { 
+    backgroundColor: '#2b2b31', 
+    borderRadius: 10, 
+    padding: 10, 
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    position: 'relative'
+  },
+  planCardHighlight: { 
+    borderColor: '#ffd166',
+    backgroundColor: '#1a1a1f',
+    transform: [{ scale: 1.05 }]
+  },
+  planBadge: {
+    position: 'absolute',
+    top: -8,
+    left: '50%',
+    marginLeft: -30,
+    backgroundColor: '#ffd166',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 1
+  },
+  planBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5
+  },
+  planHeader: {
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 2
+  },
+  planTitle: { 
+    color: '#fff', 
+    fontWeight: '700', 
+    fontSize: 14,
+    marginBottom: 3,
+    textAlign: 'center'
+  },
+  planTitleHighlight: { 
+    color: '#ffd166',
+    fontSize: 15
+  },
+  planPrice: { 
+    color: '#fff', 
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  planPriceHighlight: { 
+    color: '#ffd166',
+    fontSize: 20
+  },
+  planFeatures: {
+    marginBottom: 10
+  },
+  planFeatureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+    paddingHorizontal: 1
+  },
+  planFeatureText: { 
+    color: '#c7c7cc', 
+    fontSize: 11,
+    marginLeft: 5,
+    flex: 1
+  },
+  planFeatureTextHighlight: { 
+    color: '#fff',
+    fontWeight: '500'
+  },
+  planButton: {
+    backgroundColor: '#e50914',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  planButtonHighlight: {
+    backgroundColor: '#ffd166'
+  },
+  planButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2
+  },
+  planButtonTextHighlight: {
+    color: '#000',
+    fontSize: 12
+  },
 
   partnersRow: { paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20 },
   partnerBox: { 
@@ -860,7 +1183,7 @@ const styles = StyleSheet.create({
     height: 60, 
     marginRight: 10, 
     marginBottom: 10, 
-    backgroundColor: '#1c1c23', 
+    backgroundColor: '#2b2b31', 
     borderRadius: 8, 
     alignItems: 'center', 
     justifyContent: 'center',
@@ -893,7 +1216,7 @@ const styles = StyleSheet.create({
   
   // Recently Updated (collapsed) styles
   recentCard: { width: 136, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
-  recentCover: { width: 136, height: 188, borderRadius: 10 },
+  recentCover: { width: 136, height: 188, borderRadius: 12 },
   recentTitle: { color: '#fff', fontWeight: '700', marginTop: 6, fontSize: 13 },
   recentCats: { color: '#a0a0a6', marginTop: 2, fontSize: 12 },
   recentEpisodes: { color: '#e50914', marginTop: 2, fontSize: 11, fontWeight: '600' },

@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { AuthUser } from '../../shared-data/types';
+import { movieAppApi } from '../services/mock-api';
+
+// Debug: Log AuthContext API instance
+console.log('🔐 AuthContext API instance:', movieAppApi);
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -48,7 +52,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (userName: string, password: string) => {
     try {
-      const { movieAppApi } = await import('../services/mock-api');
       const response = await movieAppApi.login(userName, password);
       
       if (response.errorCode === 200 && response.data) {
@@ -66,9 +69,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         } else {
           // Login successful
+          console.log('🔐 AuthContext: Login successful, setting auth state');
+          console.log('🔐 AuthContext: Response data:', response.data);
+          console.log('🔐 AuthContext: User from response:', response.data.user);
+          
           setAuthState({
             isAuthenticated: true,
-            user: response.data,
+            user: response.data.user, // Fix: Use response.data.user instead of response.data
             token: response.data.token,
             refreshToken: response.data.refreshToken,
             requiresMfa: false,
@@ -92,13 +99,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const verifyMfa = async (mfaTicket: string, code: string) => {
     try {
-      const { movieAppApi } = await import('../services/mock-api');
       const response = await movieAppApi.verifyMfa(mfaTicket, code);
       
       if (response.errorCode === 200 && response.data) {
+        console.log('🔐 AuthContext: MFA verification successful');
+        console.log('🔐 AuthContext: MFA response data:', response.data);
+        console.log('🔐 AuthContext: MFA user from response:', response.data.user);
+        
         setAuthState({
           isAuthenticated: true,
-          user: response.data,
+          user: response.data.user, // Fix: Use response.data.user instead of response.data
           token: response.data.token,
           refreshToken: response.data.refreshToken,
           requiresMfa: false,
@@ -171,7 +181,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshAuthToken = async () => {
     try {
-      const { movieAppApi } = await import('../services/mock-api');
       const response = await movieAppApi.refreshToken();
       
       if (response.errorCode === 200 && response.data) {

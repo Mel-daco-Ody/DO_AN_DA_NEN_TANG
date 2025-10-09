@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert, FlatList, Modal } from 'react-native';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert, FlatList, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,11 +23,8 @@ export default function SeriesDetailsScreen() {
   const { id, title, cover, categories, rating, year, duration, country, cast, description, episodes } = useLocalSearchParams();
   const { authState } = useAuth();
   const { t } = useLanguage();
-  const [likes, setLikes] = React.useState(0);
-  const [unlikes, setUnlikes] = React.useState(0);
-  const [liked, setLiked] = React.useState<boolean | null>(null);
   const [commentText, setCommentText] = React.useState('');
-  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([]);
+  const [comments, setComments] = React.useState<any[]>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
   const [selectedSeason, setSelectedSeason] = React.useState(1);
   const [seriesData, setSeriesData] = React.useState<any>(null);
@@ -37,6 +34,7 @@ export default function SeriesDetailsScreen() {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [movieData, setMovieData] = React.useState<any>(null);
   const [showSeasonDropdown, setShowSeasonDropdown] = React.useState(false);
+  const [userRating, setUserRating] = React.useState<any>(null);
   const width = Dimensions.get('window').width;
 
   // Load series data from FilmZone backend
@@ -73,9 +71,10 @@ export default function SeriesDetailsScreen() {
         
         // Load user data
         if (authState.user) {
-          const [progressResponse, savedResponse] = await Promise.all([
+          const [progressResponse, savedResponse, ratingResponse] = await Promise.all([
             movieAppApi.getEpisodeWatchProgress(),
-            movieAppApi.isMovieSaved(parseInt(id as string))
+            movieAppApi.isMovieSaved(parseInt(id as string)),
+            movieAppApi.getUserRating(parseInt(id as string))
           ]);
           
           if (progressResponse.errorCode === 200 && progressResponse.data) {
@@ -88,6 +87,10 @@ export default function SeriesDetailsScreen() {
           
           if (savedResponse.errorCode === 200) {
             setIsSaved(savedResponse.data?.isSaved || false);
+          }
+          
+          if (ratingResponse.errorCode === 200) {
+            setUserRating(ratingResponse.data);
           }
         }
       } catch (error) {
@@ -125,6 +128,26 @@ export default function SeriesDetailsScreen() {
     } catch (error) {
       console.log('Error toggling MovieBox:', error);
       Alert.alert('Error', 'Failed to update your series list');
+    }
+  };
+
+  const handleAddRating = async (stars: number) => {
+    if (!authState.user) {
+      Alert.alert('Login Required', 'Please login to rate series');
+      return;
+    }
+    
+    try {
+      const { movieAppApi } = await import('../../../services/mock-api');
+      const response = await movieAppApi.addUserRating(parseInt(id as string), stars);
+      
+      if (response.errorCode === 200) {
+        setUserRating(response.data);
+        Alert.alert('Success', `You rated this series ${stars} star${stars > 1 ? 's' : ''}`);
+      }
+    } catch (error) {
+      console.log('Error adding rating:', error);
+      Alert.alert('Error', 'Failed to add rating');
     }
   };
   
@@ -185,7 +208,17 @@ export default function SeriesDetailsScreen() {
 
 
   return (
-    <ScrollView style={styles.container} contentInsetAdjustmentBehavior="automatic">
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        style={styles.container} 
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       {/* Header */}
       <View style={styles.header}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -308,31 +341,6 @@ export default function SeriesDetailsScreen() {
         </Pressable>
       </View>
 
-
-      {/* Like / Unlike */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('details.rating')}</Text>
-        <View style={styles.likeRow}>
-          <Pressable
-            onPress={() => {
-              if (liked === true) { setLiked(null); setLikes((n) => Math.max(0, n - 1)); }
-              else { setLiked(true); setLikes((n) => n + 1); if (liked === false) setUnlikes((n) => Math.max(0, n - 1)); }
-            }}
-            style={({ pressed }) => [styles.likeBtn, liked === true && styles.likeBtnActive, pressed && { opacity: 0.9 }]}
-          >
-            <Text style={[styles.likeText, liked === true && styles.likeTextActive]}>👍 {likes}</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              if (liked === false) { setLiked(null); setUnlikes((n) => Math.max(0, n - 1)); }
-              else { setLiked(false); setUnlikes((n) => n + 1); if (liked === true) setLikes((n) => Math.max(0, n - 1)); }
-            }}
-            style={({ pressed }) => [styles.likeBtn, liked === false && styles.likeBtnActive, pressed && { opacity: 0.9 }]}
-          >
-            <Text style={[styles.likeText, liked === false && styles.likeTextActive]}>👎 {unlikes}</Text>
-          </Pressable>
-        </View>
-      </View>
 
       {/* Episode list */}
       <View style={styles.section}>
@@ -543,6 +551,30 @@ export default function SeriesDetailsScreen() {
         })()}
       </View>
 
+      {/* Rating Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Rate This Series</Text>
+        <View style={styles.ratingContainer}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Pressable
+              key={star}
+              onPress={() => handleAddRating(star)}
+              style={styles.starButton}
+            >
+              <Ionicons 
+                name={userRating?.stars && star <= userRating.stars ? "star" : "star-outline"} 
+                size={28} 
+                color={userRating?.stars && star <= userRating.stars ? "#ffd166" : "#666"} 
+              />
+            </Pressable>
+          ))}
+        </View>
+        {userRating && (
+          <Text style={styles.ratingText}>You rated this series {userRating.stars} star{userRating.stars > 1 ? 's' : ''}</Text>
+        )}
+        <Text style={styles.ratingSubtext}>Tap a star to rate this series</Text>
+      </View>
+
       {/* Comments */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('details.comments')}</Text>
@@ -560,11 +592,31 @@ export default function SeriesDetailsScreen() {
               style={styles.commentInput}
             />
             <Pressable
-              onPress={() => {
+              onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-                setComments((prev) => [{ author: 'Bạn', text }, ...prev]);
-                setCommentText('');
+                
+                try {
+                  const { movieAppApi } = await import('../../../services/mock-api');
+                  const commentData = {
+                    movieID: parseInt(id as string),
+                    userID: authState.user?.userID,
+                    content: text,
+                    parentID: null
+                  };
+                  
+                  const response = await movieAppApi.addComment(commentData);
+                  if (response.errorCode === 200) {
+                    // Reload comments to get updated list
+                    const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
+                    if (commentsResponse.errorCode === 200) {
+                      setComments(commentsResponse.data || []);
+                    }
+                    setCommentText('');
+                  }
+                } catch (error) {
+                  console.error('Error adding comment:', error);
+                }
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
@@ -575,19 +627,21 @@ export default function SeriesDetailsScreen() {
         
         <View style={styles.commentsList}>
           {comments.map((c, idx) => (
-            <View key={idx} style={styles.commentItem}>
+            <View key={c.commentID || idx} style={styles.commentItem}>
               <View style={styles.commentAvatar}>
-                <Text style={styles.commentAvatarText}>{c.author.charAt(0).toUpperCase()}</Text>
+                <Text style={styles.commentAvatarText}>{c.userName?.charAt(0).toUpperCase() || 'U'}</Text>
               </View>
               <View style={styles.commentContent}>
                 <View style={styles.commentHeader}>
-                  <Text style={styles.commentAuthor}>{c.author}</Text>
-                  <Text style={styles.commentTime}>2 phút trước</Text>
+                  <Text style={styles.commentAuthor}>{c.userName || 'User'}</Text>
+                  <Text style={styles.commentTime}>
+                    {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
+                  </Text>
                 </View>
-                <Text style={styles.commentText}>{c.text}</Text>
+                <Text style={styles.commentText}>{c.content}</Text>
                 <View style={styles.commentActions}>
                   <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
-                    <Text style={styles.commentActionText}>👍 Thích</Text>
+                    <Text style={styles.commentActionText}>👍 {c.likeCount || 0}</Text>
                   </Pressable>
                   <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
                     <Text style={styles.commentActionText}>Trả lời</Text>
@@ -597,13 +651,14 @@ export default function SeriesDetailsScreen() {
             </View>
           ))}
         </View>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#14141b', paddingTop: 0 }, // Add padding top for fixed header
+  container: { flex: 1, backgroundColor: '#14141b' },
   
   // Header
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
@@ -1061,6 +1116,35 @@ const styles = StyleSheet.create({
     color: '#e50914',
     fontSize: 12,
     fontWeight: '600'
+  },
+  
+  // Rating Section
+  ratingContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    marginVertical: 16,
+    gap: 8
+  },
+  starButton: { 
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  ratingText: { 
+    color: '#ffd166', 
+    fontSize: 16, 
+    fontWeight: '600',
+    textAlign: 'center', 
+    marginTop: 8 
+  },
+  ratingSubtext: { 
+    color: '#8e8e93', 
+    fontSize: 14, 
+    textAlign: 'center', 
+    marginTop: 4 
   },
 });
 

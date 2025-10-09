@@ -107,11 +107,14 @@ Root Layout (_layout.tsx)
 
 ### **Key UI Components**
 1. **Header**: Search, language, user menu
-2. **Movie Cards**: Grid layout với hover effects
+2. **Movie Cards**: Grid layout với hover effects và movie posters
 3. **Hero Carousel**: Featured content showcase
 4. **Filter Modal**: Content filtering
-5. **Video Player**: Full-screen playback
-6. **Profile Tabs**: Overview, Subscription, Reviews
+5. **Video Player**: Full-screen playback với keyboard support
+6. **Profile Tabs**: Overview, Subscription, Billing History
+7. **Comment System**: Movie/series commenting với image support
+8. **Rating System**: Star rating với user feedback
+9. **Latest Comments**: Profile overview với movie posters
 
 ### **Responsive Design**
 - **Mobile First**: Optimized cho mobile devices
@@ -338,17 +341,21 @@ Component → Service → Mock API → Sample Data → Response → State → UI
 - **Watch Progress**: Continue watching
 
 ### **Content Details Features**
-- **Media Player**: Video playback
-- **Cast Information**: Actor details
+- **Media Player**: Video playback với keyboard support
+- **Cast Information**: Actor details với filmography
 - **User Interactions**: Rating, comments, favorites
+- **Comment System**: Real-time commenting với mock API
+- **Rating System**: Star rating với user feedback
 - **Related Content**: Recommendations
-- **Social Features**: Reviews, ratings
+- **Social Features**: Reviews, ratings, comments
 
 ### **User Profile Features**
-- **Account Management**: Profile editing
-- **Subscription Management**: Plan switching
-- **Billing History**: Transaction tracking
-- **Watch History**: Viewing history
+- **Account Management**: Profile editing với image upload
+- **Subscription Management**: Plan switching và billing
+- **Billing History**: Transaction tracking với auto-refresh
+- **Watch History**: Viewing history với movie posters
+- **Latest Comments**: User comments với movie context
+- **Overview Statistics**: Films watched, comments count
 - **Preferences**: Settings management
 
 ## 📈 **Scalability Considerations**

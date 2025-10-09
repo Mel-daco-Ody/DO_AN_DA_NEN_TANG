@@ -19,6 +19,9 @@ Tài liệu này phân tích mức độ tương thích giữa Mock API của Fi
 - ✅ **Error Codes**: 20+ error codes matching backend
 - ✅ **Data Models**: Complete type compatibility
 - ✅ **Business Logic**: Full business rules implementation
+- ✅ **Comment System**: Real-time commenting với movie context
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Billing History**: Auto-refresh functionality
 
 ## 🏗️ **Architecture Compatibility**
 
@@ -185,6 +188,14 @@ Mock API Service
 | Update Comment | PUT /api/comments/{id} | `updateComment()` | ✅ 100% |
 | Delete Comment | DELETE /api/comments/{id} | `deleteComment()` | ✅ 100% |
 
+**Comment System Features:**
+- ✅ **Real-time Comments**: Comments sync với mock API
+- ✅ **Movie Context**: Comments linked với movie data
+- ✅ **User Information**: Commenter details với user data
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Comment Persistence**: Comments stored trong mock API
+- ✅ **Keyboard Support**: KeyboardAvoidingView cho comment input
+
 #### **2. Reviews**
 | Method | Backend Endpoint | Mock API Method | Compatibility |
 |--------|------------------|-----------------|---------------|
@@ -220,6 +231,13 @@ Mock API Service
 |--------|------------------|-----------------|---------------|
 | Add Billing History | POST /api/user/billing | `addBillingHistory()` | ✅ 100% |
 | Get Billing History | GET /api/user/billing | `getBillingHistory()` | ✅ 100% |
+
+**Billing History Features:**
+- ✅ **Auto-refresh**: Billing history updates after payment
+- ✅ **Transaction Tracking**: Complete payment history
+- ✅ **Real-time Updates**: useFocusEffect cho refresh
+- ✅ **Payment Integration**: Seamless payment flow
+- ✅ **User Context**: User-specific billing data
 
 ### **Watch History APIs (2 methods)**
 | Method | Backend Endpoint | Mock API Method | Compatibility |

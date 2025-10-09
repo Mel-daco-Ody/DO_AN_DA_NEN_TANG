@@ -77,18 +77,21 @@
 - ✅ **Watch Progress**: Track viewing progress
 - ✅ **Saved Movies**: Personal movie collection
 - ✅ **Favorites**: Favorite movies management
-- ✅ **Watch History**: Viewing history tracking
-- ✅ **User Ratings**: Star rating system
-- ✅ **Comments**: Movie commenting system
+- ✅ **Watch History**: Viewing history tracking với movie posters
+- ✅ **User Ratings**: Star rating system với user feedback
+- ✅ **Comments**: Movie commenting system với mock API
 - ✅ **Reviews**: Detailed review system
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Comment System**: Real-time commenting với keyboard support
 
 #### **💳 Payment & Subscription (100%)**
 - ✅ **Subscription Plans**: Starter, Premium, Cinematic
 - ✅ **Payment Methods**: Credit card, MoMo, VnPay
-- ✅ **Billing History**: Transaction tracking
+- ✅ **Billing History**: Transaction tracking với auto-refresh
 - ✅ **Plan Management**: Upgrade/downgrade functionality
 - ✅ **Payment Processing**: Complete payment flow
 - ✅ **Subscription Status**: Real-time status tracking
+- ✅ **Billing Toggle**: Collapsible billing history
 
 #### **🌐 Internationalization (100%)**
 - ✅ **Multi-language**: English và Vietnamese
@@ -137,6 +140,9 @@
 - ✅ **Request Tracking**: Unique request IDs
 - ✅ **Timestamp Management**: Accurate time handling
 - ✅ **Error Simulation**: Realistic error scenarios
+- ✅ **Comment Persistence**: Comments stored trong mock API
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Billing Auto-refresh**: Real-time billing updates
 
 ### **3. Backend Integration Preparation (100%)**
 
@@ -388,8 +394,11 @@
 - ✅ **Complete Streaming App**: Đầy đủ tính năng streaming
 - ✅ **Professional UI/UX**: Beautiful và responsive design
 - ✅ **Rich User Experience**: Comprehensive user features
-- ✅ **Social Features**: Comments, reviews, ratings
+- ✅ **Social Features**: Comments, reviews, ratings với movie context
 - ✅ **Payment System**: Complete subscription management
+- ✅ **Comment System**: Real-time commenting với keyboard support
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Billing History**: Auto-refresh functionality
 
 ### **🔧 Technical Excellence**
 - ✅ **100% Backend Compatible**: Perfect API compatibility

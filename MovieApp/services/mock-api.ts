@@ -86,6 +86,8 @@ class MockMovieAppApi {
   private watchProgress: any[] = []; // Store watch progress in memory
   private savedMovies: any[] = []; // Store saved movies in memory
   private billingHistory: any[] = []; // Store billing history in memory
+  private comments: any[] = []; // Store comments in memory
+  private reviews: any[] = []; // Store reviews in memory
 
   constructor(config: ApiConfig) {
     this.config = {
@@ -401,25 +403,54 @@ class MockMovieAppApi {
   // Comments APIs (matching FilmZone backend)
   async getCommentsByMovie(movieId: string) {
     await this.delay();
-    return this.createResponse([], 200, "Success");
+    
+    // Get comments for this movie from the comments array
+    const movieComments = this.comments.filter(comment => comment.movieID === parseInt(movieId));
+    
+    // Format comments to include user information
+    const formattedComments = movieComments.map(comment => {
+      const user = sampleUsers.find((u: any) => u.userID === comment.userID);
+      return {
+        commentID: comment.commentID,
+        movieID: comment.movieID,
+        userID: comment.userID,
+        userName: user?.userName || 'User',
+        content: comment.content,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+        likeCount: comment.likeCount || 0,
+        parentID: comment.parentID
+      };
+    });
+    
+    return this.createResponse(formattedComments, 200, "Comments retrieved successfully");
   }
 
   async addComment(commentData: any) {
     await this.delay();
+    
+    const newComment = {
+      commentID: Date.now(),
+      movieID: commentData.movieID,
+      userID: this.currentUser?.userID || commentData.userID,
+      parentID: commentData.parentID || null,
+      content: commentData.content,
+      isEdited: false,
+      likeCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Add comment to the comments array
+    this.comments.push(newComment);
+    
+    console.log('💬 Comment added:', newComment);
+    console.log('💬 Total comments:', this.comments.length);
+    
     return {
       errorCode: 200,
       errorMessage: 'Comment added',
-      data: {
-        commentID: Date.now(),
-        movieID: commentData.movieID,
-        userID: this.currentUser?.userID || 1,
-        parentID: commentData.parentID || null,
-        content: commentData.content,
-        isEdited: false,
-        likeCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
+      data: newComment,
       success: true
     };
   }
@@ -1321,18 +1352,96 @@ class MockMovieAppApi {
     };
   }
 
+  // Initialize sample comments for a user
+  private initializeSampleComments(userId: number) {
+    const sampleComments = [
+      {
+        commentID: Date.now() + 1,
+        userID: userId,
+        movieID: 1,
+        content: "This movie was absolutely amazing! The visual effects were stunning.",
+        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
+        updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        likes: 12,
+        replies: 3
+      },
+      {
+        commentID: Date.now() + 2,
+        userID: userId,
+        movieID: 2,
+        content: "Great action sequences and plot twists. Highly recommended!",
+        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
+        updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        likes: 8,
+        replies: 1
+      },
+      {
+        commentID: Date.now() + 3,
+        userID: userId,
+        movieID: 3,
+        content: "The cinematography in this film is breathtaking. A true masterpiece.",
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+        updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        likes: 15,
+        replies: 5
+      },
+      {
+        commentID: Date.now() + 4,
+        userID: userId,
+        movieID: 4,
+        content: "Love the character development and emotional depth of this story.",
+        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+        updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        likes: 6,
+        replies: 2
+      },
+      {
+        commentID: Date.now() + 5,
+        userID: userId,
+        movieID: 5,
+        content: "The soundtrack perfectly complements the movie's atmosphere.",
+        createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
+        updatedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        likes: 9,
+        replies: 0
+      }
+    ];
+    
+    this.comments.push(...sampleComments);
+    console.log('📊 Overview: Added sample comments for user:', userId);
+  }
+
   // Overview Statistics APIs
   async getOverviewStats(userId: string) {
     await this.delay();
+    
+    console.log('📊 Overview: Getting overview stats for user:', userId);
+    console.log('📊 Overview: Current user:', this.currentUser?.userID);
+    console.log('📊 Overview: Total comments in system:', this.comments.length);
     
     // Get subscription plan from current user
     const subscriptionPlan = this.currentUser?.subscription?.plan || 'starter';
     
     // Count films watched (from watch progress)
     const filmsWatched = this.watchProgress.length;
+    console.log('📊 Overview: Films watched:', filmsWatched);
     
-    // Count comments (mock data - in real app would count user's comments)
-    const commentsCount = Math.floor(Math.random() * 50) + 10; // Random between 10-60
+    // Count comments (from actual comments data)
+    const userComments = this.comments.filter(comment => comment.userID === parseInt(userId));
+    let commentsCount = userComments.length;
+    console.log('📊 Overview: User comments count before init:', commentsCount);
+    
+    // If no comments yet, initialize with some sample comments for the user
+    if (commentsCount === 0 && this.currentUser) {
+      console.log('📊 Overview: No comments found, initializing sample comments...');
+      this.initializeSampleComments(parseInt(userId));
+      const updatedUserComments = this.comments.filter(comment => comment.userID === parseInt(userId));
+      commentsCount = updatedUserComments.length;
+      console.log('📊 Overview: Initialized sample comments, count:', commentsCount);
+    }
+    
+    console.log('📊 Overview: Final comments count:', commentsCount);
+    console.log('📊 Overview: User comments:', userComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', createdAt: c.createdAt })));
     
     // Get recent views (from watch progress)
     const recentViews = this.watchProgress.slice(0, 5).map((progress: any) => {
@@ -1349,33 +1458,28 @@ class MockMovieAppApi {
       };
     }).filter(Boolean);
     
-    // Get latest reviews (mock data - in real app would get user's reviews)
-    const latestReviews = [
-      {
-        reviewID: 1,
-        movieID: 1,
-        title: "Amazing Movie!",
-        content: "This movie was absolutely fantastic...",
-        rating: 5,
-        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-        movie: {
-          title: "Avatar: The Way of Water",
-          image: "https://via.placeholder.com/300x200"
-        }
-      },
-      {
-        reviewID: 2,
-        movieID: 2,
-        title: "Great Action Film",
-        content: "Loved the action sequences...",
-        rating: 4,
-        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-        movie: {
-          title: "Top Gun: Maverick",
-          image: "https://via.placeholder.com/300x200"
-        }
-      }
-    ];
+    // Get latest comments (from actual comments data) - sorted by creation date
+    const latestComments = userComments
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 3)
+      .map((comment: any) => {
+        const movie = getMovieById(comment.movieID);
+        return {
+          commentID: comment.commentID,
+          movieID: comment.movieID,
+          content: comment.content,
+          createdAt: comment.createdAt,
+          movie: movie ? {
+            title: movie.title,
+            image: movie.image
+          } : {
+            title: 'Unknown Movie',
+            image: 'https://via.placeholder.com/300x200'
+          }
+        };
+      });
+    
+    console.log('📊 Overview: Latest comments:', latestComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', movie: c.movie.title })));
     
     return {
       errorCode: 200,
@@ -1385,7 +1489,7 @@ class MockMovieAppApi {
         filmsWatched,
         commentsCount,
         recentViews,
-        latestReviews
+        latestComments
       },
       success: true
     };
@@ -1436,6 +1540,10 @@ class MockMovieAppApi {
       return this.createResponse(null, this.ERROR_CODES.UNAUTHORIZED, this.ERROR_MESSAGES.INVALID_TOKEN);
     }
 
+    console.log('💰 addBillingHistory Debug:');
+    console.log('- Billing data received:', billingData);
+    console.log('- Current userID:', this.currentUser.userID);
+
     const newBilling = {
       billingID: Date.now(),
       userID: billingData.userID,
@@ -1450,11 +1558,19 @@ class MockMovieAppApi {
       updatedAt: new Date().toISOString()
     };
 
+    console.log('- New billing record:', newBilling);
+
     // Store billing history (in real app, this would be saved to database)
-    if (!this.billingHistory) {
+    // Ensure billingHistory is always initialized
+    if (!this.billingHistory || !Array.isArray(this.billingHistory)) {
       this.billingHistory = [];
+      console.log('- Initialized billingHistory array');
     }
     this.billingHistory.push(newBilling);
+    
+    console.log('- Updated billing history array:', this.billingHistory);
+    console.log('- Billing history length:', this.billingHistory.length);
+    console.log('- All billing records:', JSON.stringify(this.billingHistory, null, 2));
 
     // Update user subscription status
     if (this.currentUser) {
@@ -1477,8 +1593,28 @@ class MockMovieAppApi {
       return this.createResponse(null, this.ERROR_CODES.UNAUTHORIZED, this.ERROR_MESSAGES.INVALID_TOKEN);
     }
 
+    // Debug logging
+    console.log('🔍 getBillingHistory Debug:');
+    console.log('- Requested userID:', userID, 'type:', typeof userID);
+    console.log('- Current user:', this.currentUser);
+    console.log('- Current userID:', this.currentUser.userID, 'type:', typeof this.currentUser.userID);
+    console.log('- All billing history:', this.billingHistory);
+    console.log('- Billing history length:', this.billingHistory?.length || 0);
+    
+    // Ensure billingHistory is initialized
+    if (!this.billingHistory || !Array.isArray(this.billingHistory)) {
+      this.billingHistory = [];
+      console.log('- Initialized empty billingHistory array');
+    }
+    
     // Return billing history for the user
-    const userBillingHistory = this.billingHistory?.filter(billing => billing.userID === parseInt(userID)) || [];
+    const userBillingHistory = this.billingHistory?.filter(billing => {
+      console.log('- Comparing billing.userID:', billing.userID, 'with requested:', parseInt(userID));
+      return billing.userID === parseInt(userID);
+    }) || [];
+    
+    console.log('- Filtered billing history:', userBillingHistory);
+    console.log('- Response data:', JSON.stringify(userBillingHistory, null, 2));
     
     return this.createResponse(userBillingHistory, this.ERROR_CODES.SUCCESS, "Billing history retrieved successfully");
   }
@@ -1488,5 +1624,8 @@ class MockMovieAppApi {
 export const movieAppApi = new MockMovieAppApi({
   baseURL: 'http://localhost:6000', // Not used in mock
 });
+
+// Debug: Log instance creation
+console.log('🏗️ Mock API instance created:', movieAppApi);
 
 export default movieAppApi;

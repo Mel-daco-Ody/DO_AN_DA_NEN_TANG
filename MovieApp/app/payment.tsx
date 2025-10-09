@@ -15,6 +15,9 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { movieAppApi } from '../services/mock-api';
+
+// Debug: Log payment screen API instance
+console.log('💳 Payment screen API instance:', movieAppApi);
 import { useAuth } from '../contexts/AuthContext';
 
 interface PaymentMethod {
@@ -87,18 +90,37 @@ export default function PaymentServiceScreen() {
   const [isLoadingMethods, setIsLoadingMethods] = useState(true);
 
   useEffect(() => {
+    console.log('💳 Payment: Component mounted');
+    console.log('💳 Payment: Initial selectedMethod:', selectedMethod);
+    console.log('💳 Payment: Initial selectedPlan:', selectedPlan);
     loadPaymentMethods();
   }, []);
 
+  useEffect(() => {
+    console.log('💳 Payment: selectedMethod changed to:', selectedMethod);
+  }, [selectedMethod]);
+
+  useEffect(() => {
+    console.log('💳 Payment: selectedPlan changed to:', selectedPlan);
+  }, [selectedPlan]);
+
   const loadPaymentMethods = async () => {
     try {
+      console.log('💳 Payment: Loading payment methods...');
       setIsLoadingMethods(true);
       const response = await movieAppApi.getPaymentMethods();
+      console.log('💳 Payment: Payment methods response:', response);
+      
       if (response.success && response.data) {
+        console.log('💳 Payment: Available payment methods:', response.data);
         setAvailableMethods(response.data);
+      } else {
+        console.log('💳 Payment: Using default payment methods');
+        setAvailableMethods(paymentMethods);
       }
     } catch (error) {
-      console.error('Failed to load payment methods:', error);
+      console.error('💳 Payment: Error loading payment methods:', error);
+      console.log('💳 Payment: Using default payment methods as fallback');
       // Fallback to static methods
       setAvailableMethods(paymentMethods);
     } finally {
@@ -108,32 +130,55 @@ export default function PaymentServiceScreen() {
 
 
   const handleMethodSelect = async (methodId: string) => {
+    console.log('💳 Payment: Method selected:', methodId);
+    console.log('💳 Payment: Previous selectedMethod:', selectedMethod);
+    
     try {
       await Haptics.selectionAsync();
     } catch {}
     setSelectedMethod(methodId);
+    
+    console.log('💳 Payment: New selectedMethod set to:', methodId);
   };
 
   const handlePayment = async () => {
+    console.log('💳 Payment: handlePayment called');
+    console.log('💳 Payment: selectedMethod:', selectedMethod);
+    console.log('💳 Payment: selectedPlan:', selectedPlan);
+    console.log('💳 Payment: isProcessing:', isProcessing);
+    
     if (!selectedMethod) {
+      console.log('❌ Payment: No payment method selected');
       Alert.alert('Error', 'Please select a payment method');
       return;
     }
 
     if (selectedMethod === 'credit_card') {
+      console.log('💳 Payment: Credit card validation');
+      console.log('💳 Payment: cardNumber:', cardNumber);
+      console.log('💳 Payment: expiryDate:', expiryDate);
+      console.log('💳 Payment: cvv:', cvv);
+      console.log('💳 Payment: cardholderName:', cardholderName);
+      
       if (!cardNumber || !expiryDate || !cvv || !cardholderName) {
+        console.log('❌ Payment: Credit card details incomplete');
         Alert.alert('Error', 'Please fill in all credit card details');
         return;
       }
     }
 
     if (selectedMethod === 'momo') {
+      console.log('💳 Payment: MoMo validation');
+      console.log('💳 Payment: momoPhoneNumber:', momoPhoneNumber);
+      
       if (!momoPhoneNumber || momoPhoneNumber.length < 10) {
+        console.log('❌ Payment: MoMo phone number invalid');
         Alert.alert('Error', 'Please enter a valid MoMo phone number');
         return;
       }
     }
 
+    console.log('✅ Payment: Validation passed, processing payment...');
     setIsProcessing(true);
     
     try {
@@ -181,7 +226,13 @@ export default function PaymentServiceScreen() {
             description: `Subscription: ${selectedPlan.toUpperCase()} plan`
           };
           
-          await movieAppApi.addBillingHistory(billingData);
+          console.log('💳 Payment: Adding billing history:', billingData);
+          
+          const billingResponse = await movieAppApi.addBillingHistory(billingData);
+          console.log('💳 Payment: Billing history response:', billingResponse);
+          
+          // Force refresh billing history after successful payment
+          console.log('💳 Payment: Billing history added successfully, will refresh on profile return');
         }
         
         const currentPlan = authState.user?.subscription?.plan || 'starter';
@@ -204,7 +255,15 @@ export default function PaymentServiceScreen() {
           [
             {
               text: 'OK',
-              onPress: () => router.back(),
+              onPress: () => {
+                // Navigate back to profile and trigger billing history refresh
+                router.back();
+                // Add a small delay to ensure navigation completes
+                setTimeout(() => {
+                  // This will trigger the useFocusEffect in profile screen
+                  console.log('💳 Payment: Navigation back to profile completed');
+                }, 100);
+              },
             },
           ]
         );

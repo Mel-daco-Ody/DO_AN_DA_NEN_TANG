@@ -180,7 +180,7 @@ export const sampleUsers: User[] = [
     isPhoneVerified: true,
     twoFactorEnabled: false,
     subscription: {
-      plan: 'premium',
+      plan: 'starter',
       status: 'active',
       startDate: '2024-01-01T00:00:00Z',
       endDate: '2025-01-01T00:00:00Z',

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert } from 'react-native';
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { signOut } from '../services/auth';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,6 +10,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { movieAppApi } from '../services/api';
 import * as Haptics from 'expo-haptics';
+import * as React from 'react';
 
 export default function ProfileScreen() {
   const { authState, signOut: authSignOut, updateSubscription, updateUser } = useAuth();
@@ -39,6 +40,30 @@ export default function ProfileScreen() {
       setAvatar(authState.user.avatar || '');
     }
   }, [authState.user]);
+
+  // Function to refresh overview stats
+  const refreshOverviewStats = async () => {
+    if (authState.user && authState.user.userID) {
+      try {
+        console.log('🔄 Refreshing overview stats...');
+        const { movieAppApi } = await import('../services/mock-api');
+        const response = await movieAppApi.getOverviewStats(authState.user.userID.toString());
+        
+        if (response.success && response.data) {
+          setOverviewStats(response.data);
+          console.log('✅ Overview stats refreshed:', response.data);
+          console.log('✅ Latest comments count:', response.data.latestComments?.length || 0);
+          console.log('✅ Latest comments:', response.data.latestComments?.map((c: any) => ({ 
+            id: c.commentID, 
+            content: c.content.substring(0, 30) + '...', 
+            movie: c.movie?.title 
+          })) || []);
+        }
+      } catch (error) {
+        console.error('Error refreshing overview stats:', error);
+      }
+    }
+  };
 
   // Load overview stats
   useEffect(() => {
@@ -78,6 +103,27 @@ export default function ProfileScreen() {
     loadOverviewStats();
     loadBillingHistory();
   }, [activeTab, authState.user]);
+
+  // Refresh overview stats when switching to overview tab
+  useEffect(() => {
+    if (activeTab === 'overview' && authState.user) {
+      refreshOverviewStats();
+    }
+  }, [activeTab]);
+
+  // Refresh overview stats when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔄 Profile: Screen focused, activeTab:', activeTab, 'user:', authState.user?.userID);
+      if (activeTab === 'overview' && authState.user) {
+        // Add a small delay to ensure data is updated
+        setTimeout(() => {
+          console.log('🔄 Profile: Refreshing overview stats...');
+          refreshOverviewStats();
+        }, 100);
+      }
+    }, [activeTab, authState.user])
+  );
 
   // Sync selectedPlan with current subscription
   useEffect(() => {
@@ -191,7 +237,7 @@ export default function ProfileScreen() {
       const userUpdates = {
         name: name,
         email: email,
-        profilePicture: profilePicture
+        profilePicture: avatar
       };
       
       const response = await movieAppApi.updateUser(userUpdates);
@@ -350,38 +396,48 @@ export default function ProfileScreen() {
                 )}
               </View>
 
-              {/* Latest Reviews */}
+              {/* Latest Comments */}
               <View style={styles.overviewSection}>
-                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Latest Reviews</Text>
-                {overviewStats?.latestReviews && overviewStats.latestReviews.length > 0 ? (
-                  <View style={styles.reviewsList}>
-                    {overviewStats.latestReviews.map((review: any, index: number) => (
-                      <View key={index} style={[styles.reviewCard, { backgroundColor: theme.colors.surface }]}>
-                        <View style={styles.reviewHeader}>
-                          <Text style={[styles.reviewTitle, { color: theme.colors.text }]}>{review.title}</Text>
-                          <View style={styles.ratingContainer}>
-                            {[...Array(5)].map((_, i) => (
-                              <Text key={i} style={styles.star}>
-                                {i < review.rating ? '★' : '☆'}
+                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Latest Comments</Text>
+                {overviewStats?.latestComments && overviewStats.latestComments.length > 0 ? (
+                  <View style={styles.commentsList}>
+                    {overviewStats.latestComments.map((comment: any, index: number) => {
+                      console.log('🖼️ Comment image debug:', {
+                        commentID: comment.commentID,
+                        movieTitle: comment.movie?.title,
+                        movieImage: comment.movie?.image,
+                        hasImage: !!comment.movie?.image
+                      });
+                      return (
+                      <View key={index} style={[styles.commentCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.commentContent}>
+                          <ImageWithPlaceholder 
+                            source={{ uri: comment.movie?.image || 'https://via.placeholder.com/60x90/333/fff?text=Movie' }}
+                            style={styles.commentMovieImage}
+                            showRedBorder={false}
+                            errorText="?"
+                          />
+                          <View style={styles.commentTextContent}>
+                            <View style={styles.commentHeader}>
+                              <Text style={[styles.commentMovieTitle, { color: theme.colors.text }]}>
+                                {comment.movie?.title || 'Movie'}
                               </Text>
-                            ))}
+                              <Text style={[styles.commentDate, { color: theme.colors.textSecondary }]}>
+                                {new Date(comment.createdAt).toLocaleDateString()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.commentText, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                              {comment.content}
+                            </Text>
                           </View>
                         </View>
-                        <Text style={[styles.reviewContent, { color: theme.colors.textSecondary }]} numberOfLines={2}>
-                          {review.content}
-                        </Text>
-                        <Text style={[styles.reviewMovie, { color: theme.colors.textSecondary }]}>
-                          {review.movie.title}
-                        </Text>
-                        <Text style={[styles.reviewDate, { color: theme.colors.textSecondary }]}>
-                          {new Date(review.createdAt).toLocaleDateString()}
-                        </Text>
                       </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 ) : (
                   <View style={styles.emptyState}>
-                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No reviews yet</Text>
+                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No comments yet</Text>
                   </View>
                 )}
               </View>
@@ -842,16 +898,50 @@ const styles = StyleSheet.create({
   recentViewTitle: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
   recentViewDate: { fontSize: 10 },
   
-  // Reviews styles
-  reviewsList: { gap: 12 },
-  reviewCard: { padding: 16, borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
-  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  reviewTitle: { fontSize: 16, fontWeight: '700', flex: 1 },
-  ratingContainer: { flexDirection: 'row' },
-  star: { fontSize: 16, color: '#ffd166', marginLeft: 2 },
-  reviewContent: { fontSize: 14, lineHeight: 20, marginBottom: 8 },
-  reviewMovie: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  reviewDate: { fontSize: 10 },
+  // Comments styles - With movie images
+  commentsList: { gap: 8 },
+  commentCard: { 
+    padding: 12, 
+    borderRadius: 8, 
+    backgroundColor: '#1a1a1f',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 9, 20, 0.2)'
+  },
+  commentContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12
+  },
+  commentMovieImage: {
+    width: 50,
+    height: 70,
+    borderRadius: 6,
+    backgroundColor: '#333'
+  },
+  commentTextContent: {
+    flex: 1
+  },
+  commentHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 6 
+  },
+  commentMovieTitle: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    color: '#e50914',
+    flex: 1
+  },
+  commentDate: { 
+    fontSize: 11, 
+    color: '#8e8e93'
+  },
+  commentText: { 
+    fontSize: 13, 
+    lineHeight: 18, 
+    color: '#c7c7cc'
+  },
   
   // Billing History Styles
   billingHistoryButton: {

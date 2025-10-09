@@ -375,6 +375,15 @@ async updateComment(commentId: number, content: string): Promise<FilmZoneRespons
 async deleteComment(commentId: number): Promise<FilmZoneResponse<any>>
 ```
 
+**Comment System Features:**
+- ✅ **Real-time Comments**: Comments sync với mock API
+- ✅ **Movie Context**: Comments linked với movie data và posters
+- ✅ **User Information**: Commenter details với user data
+- ✅ **Latest Comments**: Profile overview với movie posters
+- ✅ **Comment Persistence**: Comments stored trong mock API
+- ✅ **Keyboard Support**: KeyboardAvoidingView cho comment input
+- ✅ **Comment Sorting**: Latest comments sorted by creation date
+
 #### **2. Reviews**
 ```typescript
 // Get reviews by movie
@@ -433,6 +442,14 @@ async addBillingHistory(billingData: BillingData): Promise<FilmZoneResponse<Bill
 // Get billing history
 async getBillingHistory(userID: string): Promise<FilmZoneResponse<BillingRecord[]>>
 ```
+
+**Billing History Features:**
+- ✅ **Auto-refresh**: Billing history updates after payment
+- ✅ **Transaction Tracking**: Complete payment history
+- ✅ **Real-time Updates**: useFocusEffect cho refresh
+- ✅ **Payment Integration**: Seamless payment flow
+- ✅ **User Context**: User-specific billing data
+- ✅ **Toggle Functionality**: Collapsible billing history
 
 ### **Watch History APIs (2 methods)**
 ```typescript
@@ -495,10 +512,11 @@ async getOverviewStats(userId: string): Promise<FilmZoneResponse<OverviewStats>>
 - `addToFavorites()` - Add to favorites
 
 ### **Profile Management**
-- `getCurrentUser()` - User info
-- `updateUser()` - Update profile
-- `getBillingHistory()` - Billing history
-- `updateSubscription()` - Change plan
+- `getCurrentUser()` - User info với subscription status
+- `updateUser()` - Update profile với image upload
+- `getBillingHistory()` - Billing history với auto-refresh
+- `updateSubscription()` - Change plan với payment integration
+- `getOverviewStats()` - User statistics với latest comments
 
 ### **Video Player**
 - `addEpisodeWatchProgress()` - Track episode progress
