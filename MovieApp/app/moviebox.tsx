@@ -1,21 +1,59 @@
-import React, { useState } from 'react';
+import * as React from 'react';
+import { useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Pressable, FlatList, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Header from '../components/Header';
-import { useMovieBox } from '../contexts/MovieBoxContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function MovieBoxScreen() {
-  const { movieBox, removeFromMovieBox } = useMovieBox();
+  const { authState } = useAuth();
   const { theme } = useTheme();
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'rating'>('date');
+  const [savedMovies, setSavedMovies] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load saved movies from backend
+  React.useEffect(() => {
+    const loadSavedMovies = async () => {
+      if (!authState.user) {
+        setIsLoading(false);
+        return;
+      }
+      
+      try {
+        const { movieAppApi } = await import('../services/mock-api');
+        const response = await movieAppApi.getSavedMovies();
+        if (response.errorCode === 200) {
+          setSavedMovies(response.data || []);
+        }
+      } catch (error) {
+        console.error('Error loading saved movies:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadSavedMovies();
+  }, [authState.user]);
+
+  const removeFromMovieBox = async (id: string) => {
+    try {
+      const { movieAppApi } = await import('../services/mock-api');
+      await movieAppApi.removeFromSavedMovies(parseInt(id));
+      setSavedMovies(prev => prev.filter(movie => movie.movieID.toString() !== id));
+    } catch (error) {
+      console.error('Error removing from saved movies:', error);
+      throw error;
+    }
+  };
 
   const handleRemoveFromMovieBox = async (id: string) => {
     try {
       await Haptics.selectionAsync();
-      removeFromMovieBox(id);
+      await removeFromMovieBox(id);
     } catch (error) {
       console.log('Error removing from MovieBox:', error);
     }
@@ -60,14 +98,14 @@ export default function MovieBoxScreen() {
     }
   };
 
-  const sortedMovieBox = [...movieBox].sort((a, b) => {
+  const sortedMovieBox = [...savedMovies].sort((a, b) => {
     switch (sortBy) {
       case 'date':
-        return b.addedAt - a.addedAt; // Newest first
+        return new Date(b.addedDate || b.createdAt || 0).getTime() - new Date(a.addedDate || a.createdAt || 0).getTime();
       case 'title':
-        return a.title.localeCompare(b.title);
+        return (a.title || a.movie?.title || '').localeCompare(b.title || b.movie?.title || '');
       case 'rating':
-        return parseFloat(b.rating) - parseFloat(a.rating);
+        return (b.rating || b.movie?.popularity || 0) - (a.rating || a.movie?.popularity || 0);
       default:
         return 0;
     }
@@ -83,7 +121,7 @@ export default function MovieBoxScreen() {
       onPress={() => handleMoviePress(item)}
     >
       <View style={styles.movieImageContainer}>
-        <Image source={{ uri: item.cover }} style={styles.movieImage} />
+        <Image source={{ uri: item.cover || item.movie?.image }} style={styles.movieImage} />
         <View style={styles.movieOverlay}>
           <Pressable
             style={styles.playButton}
@@ -94,27 +132,27 @@ export default function MovieBoxScreen() {
         </View>
         <Pressable
           style={styles.removeButton}
-          onPress={() => handleRemoveFromMovieBox(item.id)}
+          onPress={() => handleRemoveFromMovieBox(item.id || item.movieID.toString())}
         >
           <Ionicons name="close" size={16} color="#fff" />
         </Pressable>
         <View style={styles.ratingBadge}>
-          <Text style={styles.ratingText}>{item.rating}</Text>
+          <Text style={styles.ratingText}>{item.rating || item.movie?.popularity || '0'}</Text>
         </View>
       </View>
       <View style={styles.movieInfo}>
         <Text style={[styles.movieTitle, { color: theme.colors.text }]} numberOfLines={2}>
-          {item.title}
+          {item.title || item.movie?.title}
         </Text>
         <Text style={[styles.movieYear, { color: theme.colors.textSecondary }]}>
-          {item.year}
+          {item.year || item.movie?.year}
         </Text>
         <Text style={[styles.movieCategories, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-          {item.categories.join(', ')}
+          {item.categories?.join(', ') || item.movie?.tags?.map((tag: any) => tag.tagName).join(', ') || 'N/A'}
         </Text>
-        {item.isSeries && item.episodes && (
+        {(item.isSeries || item.movie?.movieType === 'series') && (item.episodes || item.movie?.totalEpisodes) && (
           <Text style={[styles.movieEpisodes, { color: '#e50914' }]}>
-            {item.season} • {item.episodes} tập
+            {item.season || 'Season 1'} • {item.episodes || item.movie?.totalEpisodes} tập
           </Text>
         )}
       </View>
@@ -135,13 +173,13 @@ export default function MovieBoxScreen() {
               </Text>
             </View>
             <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-              {movieBox.length} phim đã lưu
+              {savedMovies.length} phim đã lưu
             </Text>
           </View>
         </View>
 
         {/* Sort Options */}
-        {movieBox.length > 0 && (
+        {savedMovies.length > 0 && (
           <View style={styles.sortSection}>
             <Text style={[styles.sortLabel, { color: theme.colors.textSecondary }]}>
               Sắp xếp theo:
@@ -182,11 +220,15 @@ export default function MovieBoxScreen() {
         )}
 
         {/* Movie List */}
-        {movieBox.length > 0 ? (
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading...</Text>
+          </View>
+        ) : savedMovies.length > 0 ? (
           <FlatList
             data={sortedMovieBox}
             renderItem={renderMovieItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id || item.movieID.toString()}
             numColumns={2}
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.movieList}
@@ -197,21 +239,23 @@ export default function MovieBoxScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="bookmark-outline" size={64} color={theme.colors.textSecondary} />
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-              MovieBox trống
+              {!authState.user ? 'Please login' : 'MovieBox trống'}
             </Text>
             <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
-              Thêm phim yêu thích để xem sau
+              {!authState.user ? 'Login to save movies and series' : 'Thêm phim yêu thích để xem sau'}
             </Text>
-            <Pressable
-              style={({ pressed }) => [
-                styles.browseButton,
-                { backgroundColor: '#e50914' },
-                pressed && { opacity: 0.8 }
-              ]}
-              onPress={() => router.push('/(tabs)')}
-            >
-              <Text style={styles.browseButtonText}>Duyệt phim</Text>
-            </Pressable>
+            {authState.user && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.browseButton,
+                  { backgroundColor: '#e50914' },
+                  pressed && { opacity: 0.8 }
+                ]}
+                onPress={() => router.push('/(tabs)')}
+              >
+                <Text style={styles.browseButtonText}>Duyệt phim</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </ScrollView>
@@ -385,5 +429,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

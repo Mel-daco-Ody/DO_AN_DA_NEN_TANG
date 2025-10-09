@@ -1,0 +1,25 @@
+{
+  "name": "flixgo-database",
+  "version": "1.0.0",
+  "description": "Database connection and API layer for FlixGo AdminWeb and MovieApp",
+  "main": "database_connection.js",
+  "scripts": {
+    "start": "node database_connection.js",
+    "test": "node test_connection.js"
+  },
+  "dependencies": {
+    "mssql": "^9.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "flixgo",
+    "database",
+    "sql-server",
+    "api"
+  ],
+  "author": "FlixGo Team",
+  "license": "MIT"
+}
+

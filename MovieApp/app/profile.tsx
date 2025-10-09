@@ -2,38 +2,216 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { getCurrentUser, signOut } from '../services/auth';
+import { signOut } from '../services/auth';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import * as ImagePicker from 'expo-image-picker';
-import { useSubscription, SubscriptionPlan } from '../contexts/SubscriptionContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { movieAppApi } from '../services/api';
+import * as Haptics from 'expo-haptics';
 
 export default function ProfileScreen() {
-  const { subscription, updateSubscription, cancelSubscription, toggleAutoRenew, refreshSubscription } = useSubscription();
-  const { authState, signOut: authSignOut } = useAuth();
+  const { authState, signOut: authSignOut, updateSubscription, updateUser } = useAuth();
+  const { t } = useLanguage();
   const { theme, toggleTheme, isDarkMode } = useTheme();
   const [name, setName] = useState('John Doe');
   const [email, setEmail] = useState('john@example.com');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
-  const [avatar, setAvatar] = useState('https://i.pravatar.cc/200');
+  const [avatar, setAvatar] = useState('');
   const [notifications, setNotifications] = useState(true);
   const [emailUpdates, setEmailUpdates] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState(subscription.currentPlan?.id || 'starter');
+  const [selectedPlan, setSelectedPlan] = useState('starter');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [overviewStats, setOverviewStats] = useState<any>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [billingHistory, setBillingHistory] = useState<any[]>([]);
+  const [showBillingHistory, setShowBillingHistory] = useState(false);
 
   useEffect(() => {
-    const u = getCurrentUser();
-    if (u) {
-      setName(u.name);
-      setEmail(u.email);
+    if (authState.user) {
+      setName(authState.user.userName || 'User');
+      setEmail(authState.user.email || '');
+      setAvatar(authState.user.avatar || '');
     }
-  }, []);
+  }, [authState.user]);
+
+  // Load overview stats
+  useEffect(() => {
+    const loadOverviewStats = async () => {
+      if (activeTab === 'overview' && authState.user && authState.user.userID) {
+        setIsLoadingStats(true);
+        try {
+          const { movieAppApi } = await import('../services/mock-api');
+          const response = await movieAppApi.getOverviewStats(authState.user.userID.toString());
+          
+          if (response.success && response.data) {
+            setOverviewStats(response.data);
+          }
+        } catch (error) {
+          console.error('Error loading overview stats:', error);
+        } finally {
+          setIsLoadingStats(false);
+        }
+      }
+    };
+
+    const loadBillingHistory = async () => {
+      if (activeTab === 'subscription' && authState.user && authState.user.userID) {
+        try {
+          const { movieAppApi } = await import('../services/mock-api');
+          const response = await movieAppApi.getBillingHistory(authState.user.userID.toString());
+          
+          if (response.errorCode === 200 && response.data) {
+            setBillingHistory(response.data);
+          }
+        } catch (error) {
+          console.error('Error loading billing history:', error);
+        }
+      }
+    };
+
+    loadOverviewStats();
+    loadBillingHistory();
+  }, [activeTab, authState.user]);
 
   // Sync selectedPlan with current subscription
   useEffect(() => {
-    setSelectedPlan(subscription.currentPlan?.id || 'starter');
-  }, [subscription.currentPlan]);
+    if (authState.user?.subscription) {
+      setSelectedPlan(authState.user.subscription.plan);
+    } else {
+      setSelectedPlan('starter');
+    }
+  }, [authState.user?.subscription]);
+
+  const handleChangePassword = async () => {
+    if (!password.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      Alert.alert('Error', 'Please fill in all password fields');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'New passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'New password must be at least 6 characters long');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      // Start password change process
+      const startResponse = await movieAppApi.startPasswordChangeByEmail(email);
+      
+      if (startResponse.errorCode === 200) {
+        // For now, we'll show an alert. In a real app, you'd navigate to a verification screen
+        Alert.alert(
+          'Verification Required',
+          'Please check your email for a verification code to complete the password change.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            },
+            {
+              text: 'I have the code',
+              onPress: () => {
+                // TODO: Navigate to verification screen or show input dialog
+                Alert.prompt(
+                  'Enter Verification Code',
+                  'Please enter the verification code sent to your email:',
+                  async (code) => {
+                    if (code) {
+                      try {
+                        const verifyResponse = await movieAppApi.verifyEmailCode(email, code);
+                        if (verifyResponse.errorCode === 200) {
+                          const commitResponse = await movieAppApi.commitPasswordChange(
+                            verifyResponse.data?.ticket || '',
+                            password,
+                            newPassword
+                          );
+                          
+                          if (commitResponse.errorCode === 200) {
+                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            Alert.alert('Success', 'Password changed successfully');
+                            setPassword('');
+                            setNewPassword('');
+                            setConfirmPassword('');
+                          } else {
+                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                            Alert.alert('Error', commitResponse.errorMessage || 'Failed to change password');
+                          }
+                        } else {
+                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                          Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
+                        }
+                      } catch (error) {
+                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                        Alert.alert('Error', 'An error occurred during verification');
+                      }
+                    }
+                  }
+                );
+              }
+            }
+          ]
+        );
+      } else {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Error', startResponse.errorMessage || 'Failed to start password change');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'An error occurred while changing password');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!name.trim() || !email.trim()) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      // Update profile using Mock API
+      const { movieAppApi } = await import('../services/mock-api');
+      const userUpdates = {
+        name: name,
+        email: email,
+        profilePicture: profilePicture
+      };
+      
+      const response = await movieAppApi.updateUser(userUpdates);
+      
+      if (response.errorCode === 200) {
+        // Update auth context with new user data
+        updateUser(response.data);
+      } else {
+        throw new Error(response.errorMessage || 'Failed to update profile');
+      }
+      
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(t('profile.success'), t('profile.profile_updated'));
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'An error occurred while updating profile');
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -50,12 +228,23 @@ export default function ProfileScreen() {
     });
 
     if (!result.canceled) {
-      setAvatar(result.assets[0].uri);
+      const newAvatarUri = result.assets[0].uri;
+      setAvatar(newAvatarUri);
+      // Update avatar in authState to sync across the app
+      updateUser({
+        avatar: newAvatarUri,
+        profilePicture: newAvatarUri
+      });
     }
   };
 
   const removeAvatar = () => {
     setAvatar('');
+    // Update avatar in authState to sync across the app
+    updateUser({
+      avatar: '',
+      profilePicture: ''
+    });
   };
 
   return (
@@ -66,14 +255,20 @@ export default function ProfileScreen() {
           <Text style={styles.backArrow}>←</Text>
         </Pressable>
         <View style={styles.headerRow}>
-          <ImageWithPlaceholder source={{ uri: avatar }} style={styles.avatar} showRedBorder={false} />
+          {avatar ? (
+            <ImageWithPlaceholder source={{ uri: avatar }} style={styles.avatar} showRedBorder={false} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarInitial}>{name?.charAt(0)?.toUpperCase() || 'U'}</Text>
+            </View>
+          )}
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.headerName}>{name}</Text>
+            <Text style={styles.headerName}>{name || 'User'}</Text>
             <Text style={styles.headerMeta}>Member</Text>
           </View>
           <View style={{ flex: 1 }} />
           <Pressable onPress={() => { authSignOut(); router.replace('/'); }} style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.9 }]}>
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>{t('profile.logout')}</Text>
           </Pressable>
         </View>
       </ImageBackground>
@@ -84,28 +279,132 @@ export default function ProfileScreen() {
           <Text style={[styles.tabText, activeTab === 'overview' && styles.tabTextActive, { color: theme.colors.text }]}>Overview</Text>
         </Pressable>
         <Pressable onPress={() => setActiveTab('settings')} style={({ pressed }) => [styles.tab, activeTab === 'settings' && styles.tabActive, pressed && { opacity: 0.9 }]}>
-          <Text style={[styles.tabText, activeTab === 'settings' && styles.tabTextActive, { color: theme.colors.text }]}>Settings</Text>
+          <Text style={[styles.tabText, activeTab === 'settings' && styles.tabTextActive, { color: theme.colors.text }]}>{t('profile.settings')}</Text>
         </Pressable>
         <Pressable onPress={() => setActiveTab('subscription')} style={({ pressed }) => [styles.tab, activeTab === 'subscription' && styles.tabActive, pressed && { opacity: 0.9 }]}>
           <Text style={[styles.tabText, activeTab === 'subscription' && styles.tabTextActive, { color: theme.colors.text }]}>Subscription</Text>
         </Pressable>
       </View>
 
+      {/* Overview Content */}
+      {activeTab === 'overview' && (
+        <View style={[styles.content, { backgroundColor: theme.colors.background }]}>
+          {!authState.user ? (
+            <View style={styles.loadingContainer}>
+              <Text style={[styles.loadingText, { color: theme.colors.text }]}>Please login to view overview</Text>
+            </View>
+          ) : isLoadingStats ? (
+            <View style={styles.loadingContainer}>
+              <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading...</Text>
+            </View>
+          ) : (
+            <>
+              {/* Statistics Cards */}
+              <View style={styles.statsGrid}>
+                <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
+                  <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Subscription Plan</Text>
+                  <Text style={styles.overviewStatValue}>
+                    {authState.user?.subscription?.plan ? authState.user.subscription.plan.toUpperCase() : 'STARTER'}
+                  </Text>
+                  <Text style={[styles.overviewStatSubtext, { color: theme.colors.textSecondary }]}>
+                    {authState.user?.subscription?.status === 'active' ? 'Active' : 'Inactive'}
+                  </Text>
+                </View>
+                
+                <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
+                  <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Films Watched</Text>
+                  <Text style={styles.overviewStatValue}>
+                    {overviewStats?.filmsWatched !== undefined ? overviewStats.filmsWatched : '---'}
+                  </Text>
+                </View>
+                
+                <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
+                  <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Comments</Text>
+                  <Text style={styles.overviewStatValue}>
+                    {overviewStats?.commentsCount !== undefined ? overviewStats.commentsCount : '---'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Recent Views */}
+              <View style={styles.overviewSection}>
+                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Recent Views</Text>
+                {overviewStats?.recentViews && overviewStats.recentViews.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {overviewStats.recentViews.map((view: any, index: number) => (
+                      <View key={index} style={[styles.recentViewCard, { backgroundColor: theme.colors.surface }]}>
+                        <ImageWithPlaceholder source={view.image} style={styles.recentViewImage} showRedBorder={false} />
+                        <Text style={[styles.recentViewTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                          {view.title}
+                        </Text>
+                        <Text style={[styles.recentViewDate, { color: theme.colors.textSecondary }]}>
+                          {new Date(view.lastWatchedAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No recent views</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Latest Reviews */}
+              <View style={styles.overviewSection}>
+                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Latest Reviews</Text>
+                {overviewStats?.latestReviews && overviewStats.latestReviews.length > 0 ? (
+                  <View style={styles.reviewsList}>
+                    {overviewStats.latestReviews.map((review: any, index: number) => (
+                      <View key={index} style={[styles.reviewCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.reviewHeader}>
+                          <Text style={[styles.reviewTitle, { color: theme.colors.text }]}>{review.title}</Text>
+                          <View style={styles.ratingContainer}>
+                            {[...Array(5)].map((_, i) => (
+                              <Text key={i} style={styles.star}>
+                                {i < review.rating ? '★' : '☆'}
+                              </Text>
+                            ))}
+                          </View>
+                        </View>
+                        <Text style={[styles.reviewContent, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                          {review.content}
+                        </Text>
+                        <Text style={[styles.reviewMovie, { color: theme.colors.textSecondary }]}>
+                          {review.movie.title}
+                        </Text>
+                        <Text style={[styles.reviewDate, { color: theme.colors.textSecondary }]}>
+                          {new Date(review.createdAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No reviews yet</Text>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+        </View>
+      )}
+
       {/* Settings Content */}
       {activeTab === 'settings' && (
         <>
           {/* Profile Picture Section */}
           <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Profile Picture</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('profile.profile_picture')}</Text>
             <View style={styles.avatarSection}>
               <View style={styles.avatarContainer}>
-                {avatar ? (
-                  <ImageWithPlaceholder source={{ uri: avatar }} style={styles.settingsAvatar} showRedBorder={false} />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarInitial}>{name.charAt(0).toUpperCase()}</Text>
-                  </View>
-                )}
+                  {avatar ? (
+                    <ImageWithPlaceholder source={{ uri: avatar }} style={styles.settingsAvatar} showRedBorder={false} />
+                  ) : (
+                    <View style={[styles.avatarPlaceholder, { width: 80, height: 80, borderRadius: 40 }]}>
+                      <Text style={[styles.avatarInitial, { fontSize: 32 }]}>{name?.charAt(0)?.toUpperCase() || 'U'}</Text>
+                    </View>
+                  )}
               </View>
               <View style={styles.avatarActions}>
                 <Pressable onPress={pickImage} style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.9 }]}>
@@ -137,15 +436,46 @@ export default function ProfileScreen() {
               keyboardType="email-address"
             />
             <TextInput
-              placeholder="Password"
+              placeholder="Current Password"
               placeholderTextColor={theme.colors.textSecondary}
               value={password}
               onChangeText={setPassword}
               style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
               secureTextEntry
             />
-            <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}>
-              <Text style={styles.primaryBtnText}>Save Changes</Text>
+            <TextInput
+              placeholder="New Password"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
+              secureTextEntry
+            />
+            <TextInput
+              placeholder="Confirm New Password"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
+              secureTextEntry
+            />
+            <Pressable 
+              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }, isUpdatingProfile && styles.disabledButton]}
+              onPress={handleUpdateProfile}
+              disabled={isUpdatingProfile}
+            >
+              <Text style={styles.primaryBtnText}>
+                {isUpdatingProfile ? t('profile.updating') : t('profile.update_profile')}
+              </Text>
+            </Pressable>
+            <Pressable 
+              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.9 }, isChangingPassword && styles.disabledButton]}
+              onPress={handleChangePassword}
+              disabled={isChangingPassword}
+            >
+              <Text style={styles.secondaryBtnText}>
+                {isChangingPassword ? 'Changing...' : 'Change Password'}
+              </Text>
             </Pressable>
           </View>
 
@@ -198,41 +528,62 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Current plan</Text>
             <View style={[styles.planCard, styles.planActive]}>
-              <Text style={styles.planTitle}>{subscription.currentPlan?.name || 'No Plan'}</Text>
-              <Text style={styles.planPrice}>${subscription.currentPlan?.price || 0} / {subscription.currentPlan?.duration || 'month'}</Text>
-              <Text style={styles.planStatus}>
-                {subscription.isActive ? `Active until ${subscription.expiryDate}` : 'Inactive'}
+              <Text style={styles.planTitle}>
+                {authState.user?.subscription?.plan === 'premium' ? 'Premium Plan' :
+                 authState.user?.subscription?.plan === 'cinematic' ? 'Cinematic Plan' : 'Free Plan'}
               </Text>
+              <Text style={styles.planPrice}>
+                {authState.user?.subscription?.plan === 'premium' ? '$19.99 / month' :
+                 authState.user?.subscription?.plan === 'cinematic' ? '$39.99 / 2 months' : '$0 / month'}
+              </Text>
+              <Text style={styles.planStatus}>
+                {authState.user?.subscription?.status === 'active' ? 'Active' : 'Inactive'}
+              </Text>
+              {authState.user?.subscription?.endDate && (
+                <Text style={styles.planExpiry}>
+                  Expires: {new Date(authState.user.subscription.endDate).toLocaleDateString()}
+                </Text>
+              )}
             </View>
           </View>
 
           {/* Available plans */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Available plans</Text>
+            <Text style={styles.sectionSubtitle}>Choose your subscription plan:</Text>
             <View style={styles.plansGrid}>
-              <Pressable onPress={() => setSelectedPlan('starter')} style={({ pressed }) => [styles.planCard, selectedPlan === 'starter' && styles.planSelected, pressed && { opacity: 0.9 }]}>
+              <Pressable 
+                onPress={() => setSelectedPlan('starter')} 
+                style={({ pressed }) => [styles.planCard, selectedPlan === 'starter' && styles.planSelected, pressed && { opacity: 0.9 }]}
+              >
                 <Text style={styles.planTitle}>Starter</Text>
                 <Text style={styles.planPrice}>Free</Text>
-                <Text style={styles.planFeatures}>• 7 days trial</Text>
+                <Text style={styles.planDuration}>unlimited</Text>
                 <Text style={styles.planFeatures}>• 720p Resolution</Text>
                 <Text style={styles.planFeatures}>• Limited Availability</Text>
                 <Text style={styles.planFeatures}>• Desktop Only</Text>
               </Pressable>
               
-              <Pressable onPress={() => setSelectedPlan('premium')} style={({ pressed }) => [styles.planCard, selectedPlan === 'premium' && styles.planSelected, pressed && { opacity: 0.9 }]}>
+              <Pressable 
+                onPress={() => setSelectedPlan('premium')} 
+                style={({ pressed }) => [styles.planCard, selectedPlan === 'premium' && styles.planSelected, pressed && { opacity: 0.9 }]}
+              >
                 <Text style={styles.planTitle}>Premium</Text>
                 <Text style={styles.planPrice}>$19.99</Text>
-                <Text style={styles.planFeatures}>• 1 Month</Text>
+                <Text style={styles.planDuration}>per month</Text>
                 <Text style={styles.planFeatures}>• Full HD</Text>
                 <Text style={styles.planFeatures}>• Lifetime Availability</Text>
                 <Text style={styles.planFeatures}>• TV & Desktop</Text>
                 <Text style={styles.planFeatures}>• 24/7 Support</Text>
               </Pressable>
               
-              <Pressable onPress={() => setSelectedPlan('cinematic')} style={({ pressed }) => [styles.planCard, selectedPlan === 'cinematic' && styles.planSelected, pressed && { opacity: 0.9 }]}>
+              <Pressable 
+                onPress={() => setSelectedPlan('cinematic')} 
+                style={({ pressed }) => [styles.planCard, selectedPlan === 'cinematic' && styles.planSelected, pressed && { opacity: 0.9 }]}
+              >
                 <Text style={styles.planTitle}>Cinematic</Text>
                 <Text style={styles.planPrice}>$39.99</Text>
-                <Text style={styles.planFeatures}>• 2 Months</Text>
+                <Text style={styles.planDuration}>per 2 months</Text>
                 <Text style={styles.planFeatures}>• Ultra HD</Text>
                 <Text style={styles.planFeatures}>• Lifetime Availability</Text>
                 <Text style={styles.planFeatures}>• Any Device</Text>
@@ -240,73 +591,66 @@ export default function ProfileScreen() {
               </Pressable>
             </View>
             
+            {/* Action button for all plans */}
             <Pressable 
               style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
-              onPress={() => {
-                const plans: { [key: string]: SubscriptionPlan } = {
-                  'starter': {
-                    id: 'starter',
-                    name: 'Starter',
-                    price: 0,
-                    duration: 'monthly',
-                    features: ['7 days trial', '720p Resolution', 'Limited Availability', 'Desktop Only']
-                  },
-                  'premium': {
-                    id: 'premium',
-                    name: 'Premium',
-                    price: 19.99,
-                    duration: 'monthly',
-                    features: ['1 Month', 'Full HD', 'Lifetime Availability', 'TV & Desktop', '24/7 Support'],
-                    isPopular: true
-                  },
-                  'cinematic': {
-                    id: 'cinematic',
-                    name: 'Cinematic',
-                    price: 39.99,
-                    duration: 'monthly',
-                    features: ['2 Months', 'Ultra HD', 'Lifetime Availability', 'Any Device', '24/7 Support']
+              onPress={async () => {
+                try {
+                  await Haptics.selectionAsync();
+                  
+                  const currentPlan = authState.user?.subscription?.plan || 'starter';
+                  
+                  if (selectedPlan === currentPlan) {
+                    Alert.alert('Current Plan', `You are already on the ${currentPlan} plan.`);
+                    return;
                   }
-                };
-
-                const selectedPlanData = plans[selectedPlan];
-                if (selectedPlanData) {
-                  updateSubscription(selectedPlanData);
-                  refreshSubscription();
-                  const currentPlanId = subscription.currentPlan?.id || 'starter';
+                  
+                  // Determine if it's an upgrade or downgrade
                   const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-                  const currentLevel = planHierarchy[currentPlanId as keyof typeof planHierarchy] || 0;
+                  const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
                   const selectedLevel = planHierarchy[selectedPlan as keyof typeof planHierarchy] || 0;
                   
-                  let actionText = 'updated';
                   if (selectedLevel > currentLevel) {
-                    actionText = 'upgraded to';
-                  } else if (selectedLevel < currentLevel) {
-                    actionText = 'downgraded to';
-                  } else if (selectedPlan === currentPlanId) {
-                    actionText = 'continued';
+                    // Upgrade - Navigate to payment page
+                    router.push('/payment');
                   } else {
-                    actionText = 'switched to';
+                    // Downgrade - Show confirmation dialog
+                    Alert.alert(
+                      'Downgrade Subscription',
+                      `Are you sure you want to downgrade from ${currentPlan} to ${selectedPlan}? You will lose access to premium features.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Downgrade',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await updateSubscription(selectedPlan as 'starter' | 'premium' | 'cinematic');
+                              Alert.alert('Subscription Updated', `Successfully downgraded to ${selectedPlan} plan!`);
+                            } catch (error) {
+                              Alert.alert('Error', 'Failed to update subscription. Please try again.');
+                            }
+                          }
+                        }
+                      ]
+                    );
                   }
-                  
-                  Alert.alert(
-                    'Subscription Updated',
-                    `Successfully ${actionText} ${selectedPlanData.name} plan!`,
-                    [{ text: 'OK' }]
-                  );
+                } catch (error) {
+                  console.error('Navigation error:', error);
                 }
               }}
             >
               <Text style={styles.primaryBtnText}>
                 {(() => {
-                  const currentPlanId = subscription.currentPlan?.id || 'starter';
+                  const currentPlan = authState.user?.subscription?.plan || 'starter';
                   
-                  if (selectedPlan === currentPlanId) {
-                    return `Continue ${subscription.currentPlan?.name || 'Current Plan'}`;
+                  if (selectedPlan === currentPlan) {
+                    return `Continue Current Plan`;
                   }
                   
                   // Determine if it's an upgrade or downgrade
                   const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-                  const currentLevel = planHierarchy[currentPlanId as keyof typeof planHierarchy] || 0;
+                  const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
                   const selectedLevel = planHierarchy[selectedPlan as keyof typeof planHierarchy] || 0;
                   
                   const planNames = { 'starter': 'Starter', 'premium': 'Premium', 'cinematic': 'Cinematic' };
@@ -324,6 +668,48 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
 
+          {/* Billing History */}
+          <View style={styles.section}>
+            <Pressable 
+              style={styles.billingHistoryButton}
+              onPress={() => setShowBillingHistory(!showBillingHistory)}
+            >
+              <Text style={styles.billingHistoryButtonText}>
+                {showBillingHistory ? 'Hide' : 'Show'} Billing History ({billingHistory.length})
+              </Text>
+              <Text style={styles.billingHistoryButtonIcon}>
+                {showBillingHistory ? '▲' : '▼'}
+              </Text>
+            </Pressable>
+            
+            {showBillingHistory && (
+              <View style={styles.billingHistoryContainer}>
+                {billingHistory.length > 0 ? (
+                  billingHistory.map((billing, index) => (
+                    <View key={billing.billingID || index} style={styles.billingItem}>
+                      <View style={styles.billingHeader}>
+                        <Text style={styles.billingPlan}>{billing.subscriptionPlan.toUpperCase()}</Text>
+                        <Text style={styles.billingAmount}>${billing.amount.toFixed(2)}</Text>
+                      </View>
+                      <Text style={styles.billingMethod}>Payment Method: {billing.paymentMethod}</Text>
+                      <Text style={styles.billingStatus}>Status: {billing.status}</Text>
+                      <Text style={styles.billingDate}>
+                        {new Date(billing.billingDate).toLocaleDateString()}
+                      </Text>
+                      {billing.transactionID && (
+                        <Text style={styles.billingTransaction}>
+                          Transaction ID: {billing.transactionID}
+                        </Text>
+                      )}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noBillingHistory}>No billing history found</Text>
+                )}
+              </View>
+            )}
+          </View>
+
           {/* Cancel subscription */}
           <View style={styles.section}>
             <Pressable 
@@ -338,8 +724,9 @@ export default function ProfileScreen() {
                       text: 'Cancel Subscription', 
                       style: 'destructive',
                       onPress: () => {
-                        cancelSubscription();
-                        refreshSubscription();
+                        // TODO: Implement subscription cancellation with FilmZone backend
+                        // const response = await movieAppApi.cancelSubscription();
+                        console.log('Cancel subscription');
                         Alert.alert('Subscription Cancelled', 'Your subscription has been reset to Starter plan.');
                       }
                     }
@@ -351,112 +738,10 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
 
-          {/* Billing history */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Billing history</Text>
-            <View style={styles.billingItem}>
-              <Text style={styles.billingDate}>Nov 25, 2024</Text>
-              <Text style={styles.billingAmount}>$19.99</Text>
-              <Text style={styles.billingStatus}>Paid</Text>
-            </View>
-            <View style={styles.billingItem}>
-              <Text style={styles.billingDate}>Oct 25, 2024</Text>
-              <Text style={styles.billingAmount}>$19.99</Text>
-              <Text style={styles.billingStatus}>Paid</Text>
-            </View>
-            <View style={styles.billingItem}>
-              <Text style={styles.billingDate}>Sep 25, 2024</Text>
-              <Text style={styles.billingAmount}>$19.99</Text>
-              <Text style={styles.billingStatus}>Paid</Text>
-            </View>
-          </View>
         </>
       )}
 
       {/* Overview Content */}
-      {activeTab === 'overview' && (
-        <>
-          {/* KPI cards */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Premium plan</Text>
-          <Text style={styles.statValue}>$19.99</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Films watched</Text>
-          <Text style={styles.statValue}>1 172</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Your comments</Text>
-          <Text style={styles.statValue}>2 573</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Your reviews</Text>
-          <Text style={styles.statValue}>1 021</Text>
-        </View>
-      </View>
-
-      {/* Recent Views panel */}
-      <View style={styles.panel}>
-        <View style={styles.panelHeader}>
-          <Text style={styles.panelTitle}>Recent Views</Text>
-          <Pressable style={({ pressed }) => [styles.panelBtn, pressed && { opacity: 0.9 }]} onPress={() => router.push('/recent-views')}>
-            <Text style={styles.panelBtnText}>View All</Text>
-          </Pressable>
-        </View>
-        <View style={styles.tableHead}>
-          <Text style={[styles.th, { flex: 0.6 }]}>ID</Text>
-          <Text style={[styles.th, { flex: 3 }]}>TITLE</Text>
-          <Text style={[styles.th, { flex: 2 }]}>CATEGORY</Text>
-          <Text style={[styles.th, { flex: 1 }]}>RATING</Text>
-        </View>
-        {[
-          { id: '321', title: 'The Lost City', cat: 'Movie', rate: '9.2' },
-          { id: '54', title: 'Undercurrents', cat: 'Anime', rate: '9.1' },
-          { id: '670', title: 'Tales from the Underworld', cat: 'TV Show', rate: '9.0' },
-          { id: '241', title: 'The Unseen World', cat: 'TV Show', rate: '8.9' },
-          { id: '22', title: 'Redemption Road', cat: 'Movie', rate: '8.9' },
-        ].map((r, idx) => (
-          <View key={idx} style={styles.tableRow}>
-            <Text style={[styles.td, { flex: 0.6 }]}>{r.id}</Text>
-            <Text style={[styles.td, { flex: 3 }]}>{r.title}</Text>
-            <Text style={[styles.td, { flex: 2 }]}>{r.cat}</Text>
-            <Text style={[styles.td, { flex: 1, color: '#ffd166', fontWeight: '700' }]}>{r.rate}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Latest reviews panel */}
-      <View style={styles.panel}>
-        <View style={styles.panelHeader}>
-          <Text style={styles.panelTitle}>Latest reviews</Text>
-          <Pressable style={({ pressed }) => [styles.panelBtn, pressed && { opacity: 0.9 }]} onPress={() => router.push('/latest-reviews')}>
-            <Text style={styles.panelBtnText}>View All</Text>
-          </Pressable>
-        </View>
-        <View style={styles.tableHead}>
-          <Text style={[styles.th, { flex: 0.8 }]}>ID</Text>
-          <Text style={[styles.th, { flex: 3 }]}>ITEM</Text>
-          <Text style={[styles.th, { flex: 2 }]}>AUTHOR</Text>
-          <Text style={[styles.th, { flex: 1 }]}>RATING</Text>
-        </View>
-        {[
-          { id: '126', item: 'I Dream in Another Language', author: 'Jackson Brown', rate: '7.2' },
-          { id: '125', item: 'Benched', author: 'Quang', rate: '6.3' },
-          { id: '124', item: 'Whitney', author: 'Brian Cranston', rate: '8.4' },
-          { id: '123', item: 'Blindspotting', author: 'Ketut', rate: '9.0' },
-          { id: '122', item: 'I Dream in Another Language', author: 'Eliza Josceline', rate: '7.7' },
-        ].map((r, idx) => (
-          <View key={idx} style={styles.tableRow}>
-            <Text style={[styles.td, { flex: 0.8 }]}>{r.id}</Text>
-            <Text style={[styles.td, { flex: 3 }]}>{r.item}</Text>
-            <Text style={[styles.td, { flex: 2 }]}>{r.author}</Text>
-            <Text style={[styles.td, { flex: 1, color: '#ffd166', fontWeight: '700' }]}>{r.rate}</Text>
-          </View>
-        ))}
-      </View>
-        </>
-      )}
       
     </ScrollView>
   );
@@ -470,27 +755,17 @@ const styles = StyleSheet.create({
   backArrow: { color: '#e50914', fontSize: 20, fontWeight: '800' },
   headerRow: { flexDirection: 'row', alignItems: 'center', padding: 12 },
   avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#14141b' },
+  avatarPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#e50914', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#fff', fontSize: 24, fontWeight: '700' },
   headerName: { color: '#fff', fontWeight: '800', fontSize: 18 },
   headerMeta: { color: '#c7c7cc', marginTop: 4 },
 
   section: { margin: 12, backgroundColor: '#121219', borderRadius: 12, padding: 12 },
   sectionTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 8 },
+  sectionSubtitle: { color: '#8e8e93', fontSize: 12, marginBottom: 12 },
   input: { backgroundColor: '#14141b', borderRadius: 10, paddingHorizontal: 12, height: 44, color: '#fff', marginBottom: 10, borderWidth: 1, borderColor: '#e50914' },
   primaryBtn: { backgroundColor: '#e50914', paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontWeight: '700' },
-  statsRow: { flexDirection: 'row', paddingHorizontal: 12, marginTop: 12 },
-  statCard: { flex: 1, backgroundColor: '#121219', borderRadius: 12, padding: 12, marginRight: 10 },
-  statLabel: { color: '#c7c7cc' },
-  statValue: { color: '#fff', fontWeight: '800', fontSize: 18, marginTop: 6 },
-  panel: { margin: 12, backgroundColor: '#121219', borderRadius: 12, padding: 12 },
-  panelHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  panelTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  panelBtn: { marginLeft: 'auto', borderWidth: 1, borderColor: '#2a2a37', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
-  panelBtnText: { color: '#c7c7cc', fontWeight: '700' },
-  tableHead: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  th: { color: '#8e8e93', fontWeight: '700' },
-  tableRow: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  td: { color: '#c7c7cc' },
   logoutBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#e50914', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
   logoutText: { color: '#e50914', fontWeight: '700' },
 
@@ -520,8 +795,6 @@ const styles = StyleSheet.create({
   avatarSection: { flexDirection: 'row', alignItems: 'center' },
   avatarContainer: { marginRight: 16 },
   settingsAvatar: { width: 80, height: 80, borderRadius: 40 },
-  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#e50914', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { color: '#fff', fontSize: 32, fontWeight: '700' },
   avatarActions: { flex: 1 },
   avatarBtn: { backgroundColor: '#e50914', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, marginBottom: 8 },
   avatarBtnDanger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#e50914' },
@@ -536,13 +809,121 @@ const styles = StyleSheet.create({
   planSelected: { borderColor: '#e50914' },
   planTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
   planPrice: { color: '#ffd166', fontWeight: '700', fontSize: 18, marginTop: 4 },
+  planDuration: { color: '#8e8e93', fontSize: 12, marginTop: 2 },
   planStatus: { color: '#c7c7cc', marginTop: 4 },
+  planExpiry: { color: '#8e8e93', marginTop: 2, fontSize: 12 },
   planFeatures: { color: '#c7c7cc', marginTop: 4, fontSize: 12 },
   plansGrid: { flexDirection: 'column' },
-  billingItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  billingDate: { color: '#c7c7cc', flex: 2 },
-  billingAmount: { color: '#fff', fontWeight: '700', flex: 1 },
-  billingStatus: { color: '#4CAF50', fontWeight: '700', flex: 1 },
+  
+  // Additional styles for new features
+  disabledButton: { opacity: 0.6 },
+  secondaryBtn: { backgroundColor: 'transparent', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, alignItems: 'center', marginTop: 8, borderWidth: 1, borderColor: '#e50914' },
+  secondaryBtnText: { color: '#e50914', fontSize: 16, fontWeight: '600' },
+  paymentBtn: { backgroundColor: '#28a745', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, alignItems: 'center', marginTop: 8 },
+  paymentBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  
+  // Overview styles
+  content: { flex: 1 },
+  loadingContainer: { padding: 20, alignItems: 'center' },
+  loadingText: { fontSize: 16 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 16, gap: 12 },
+  overviewStatCard: { flex: 1, minWidth: '30%', padding: 16, borderRadius: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  overviewStatTitle: { fontSize: 12, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
+  overviewStatValue: { fontSize: 20, fontWeight: '700', color: '#e50914' },
+  overviewStatSubtext: { fontSize: 12, fontWeight: '500', marginTop: 4, textAlign: 'center' },
+  overviewSection: { paddingHorizontal: 16, paddingVertical: 16 },
+  overviewSectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  emptyState: { padding: 20, alignItems: 'center' },
+  emptyText: { fontSize: 14 },
+  
+  // Recent Views styles
+  recentViewCard: { width: 120, marginRight: 12, borderRadius: 8, padding: 8 },
+  recentViewImage: { width: '100%', height: 80, borderRadius: 6, marginBottom: 8 },
+  recentViewTitle: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  recentViewDate: { fontSize: 10 },
+  
+  // Reviews styles
+  reviewsList: { gap: 12 },
+  reviewCard: { padding: 16, borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  reviewTitle: { fontSize: 16, fontWeight: '700', flex: 1 },
+  ratingContainer: { flexDirection: 'row' },
+  star: { fontSize: 16, color: '#ffd166', marginLeft: 2 },
+  reviewContent: { fontSize: 14, lineHeight: 20, marginBottom: 8 },
+  reviewMovie: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  reviewDate: { fontSize: 10 },
+  
+  // Billing History Styles
+  billingHistoryButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1c1c23',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  billingHistoryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  billingHistoryButtonIcon: {
+    color: '#e50914',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  billingHistoryContainer: {
+    marginTop: 8,
+  },
+  billingItem: {
+    backgroundColor: '#1c1c23',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  billingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  billingPlan: {
+    color: '#e50914',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  billingAmount: {
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  billingMethod: {
+    color: '#c7c7cc',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  billingStatus: {
+    color: '#c7c7cc',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  billingDate: {
+    color: '#666',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  billingTransaction: {
+    color: '#666',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  noBillingHistory: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 20,
+  },
 });
 
 

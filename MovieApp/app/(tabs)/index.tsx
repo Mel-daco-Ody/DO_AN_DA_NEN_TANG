@@ -1,15 +1,14 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, Dimensions, TouchableOpacity, ScrollView, Pressable, Modal } from 'react-native';
+import * as React from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { StyleSheet, View, Text, FlatList, Dimensions, TouchableOpacity, ScrollView, Pressable, Modal, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '../../components/Header';
 import ImageWithPlaceholder from '../../components/ImageWithPlaceholder';
-import { useSubscription } from '../../contexts/SubscriptionContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { useMovieBox } from '../../contexts/MovieBoxContext';
 
 type Category = 'new' | 'movies' | 'shows' | 'genre';
 type Genre = 'All' | 'Movies' | 'TV Shows' | 'Action' | 'Comedy' | 'Drama' | 'Romance' | 'Thriller' | 'Mystery' | 'Fantasy' | 'Adventure' | 'Music';
@@ -17,100 +16,55 @@ type Year = 'All' | '2024' | '2023' | '2022' | '2021' | '2020' | '2019' | '2018'
 type Studio = 'All' | 'Netflix' | 'Disney+' | 'HBO Max' | 'Amazon Prime' | 'Apple TV+' | 'Paramount+' | 'Hulu' | 'Peacock' | 'Showtime';
 
 type MediaItem = {
-  id: string;
+  movieID: number;
+  slug: string;
   title: string;
-  cover: string;
-  categories: string[];
-  rating: string;
+  originalTitle?: string;
+  description?: string;
+  movieType: string; // movie | series
+  image: string;
+  status: string;
+  releaseDate?: string;
+  durationSeconds?: number;
+  totalSeasons?: number;
+  totalEpisodes?: number;
+  year?: number;
+  rated?: string;
+  popularity?: number;
+  regionID: number;
+  createdAt: string;
+  updatedAt: string;
+  // Navigation properties
+  region?: {
+    regionID: number;
+    regionName: string;
+  };
+  tags?: Array<{
+    tagID: number;
+    tagName: string;
+    tagDescription?: string;
+  }>;
+  // Legacy properties for compatibility
+  id?: string;
+  cover?: string;
+  categories?: string[];
+  rating?: string;
   isSeries?: boolean;
-  year?: string;
-  studio?: string;
   episodes?: string;
   season?: string;
+  studio?: string;
 };
 
-const heroSlides = [
-  {
-    id: 'h1',
-    title: 'Savage Beauty',
-    rating: '9.8',
-    bg: { uri: 'https://flixgo.volkovdesign.com/main/img/bg/slide__bg-1.jpg' },
-    text:
-      "A brilliant scientist discovers a way to harness the power of the ocean's currents to create a new, renewable energy source...",
-    year: '2024',
-    duration: '142 min',
-    country: 'USA',
-    cast: 'Emma Stone, Ryan Gosling',
-    description: 'Một nhà khoa học tài năng khám phá ra cách khai thác sức mạnh của dòng hải lưu để tạo ra nguồn năng lượng tái tạo mới, nhưng phát hiện này có thể thay đổi thế giới mãi mãi.',
-    categories: ['Action', 'Sci-Fi', 'Drama'],
-    isSeries: false,
-  },
-  {
-    id: 'h2',
-    title: 'Voices from the Other Side',
-    rating: '7.1',
-    bg: { uri: 'https://flixgo.volkovdesign.com/main/img/bg/slide__bg-2.jpg' },
-    text:
-      'In a world where magic is outlawed and hunted, a young witch must use her powers to fight back...',
-    year: '2024',
-    duration: '128 min',
-    country: 'UK',
-    cast: 'Anya Taylor-Joy, Tom Holland',
-    description: 'Trong một thế giới nơi phép thuật bị cấm và săn lùng, một phù thủy trẻ phải sử dụng sức mạnh của mình để chống lại hệ thống áp bức.',
-    categories: ['Fantasy', 'Action', 'Thriller'],
-    isSeries: false,
-  },
-  {
-    id: 'h3',
-    title: 'Endless Horizon',
-    rating: '8.6',
-    bg: { uri: 'https://flixgo.volkovdesign.com/main/img/bg/slide__bg-3.jpg' },
-    text:
-      'A perilous journey to the heart of the Amazon rainforest to find a missing archaeologist uncovers a hidden city...',
-    year: '2024',
-    duration: '156 min',
-    country: 'Brazil',
-    cast: 'Pedro Pascal, Zendaya',
-    description: 'Một cuộc hành trình nguy hiểm đến trung tâm rừng Amazon để tìm một nhà khảo cổ mất tích, khám phá ra một thành phố cổ bị ẩn giấu.',
-    categories: ['Adventure', 'Mystery', 'Drama'],
-    isSeries: false,
-  },
-];
+// Hero slides will be loaded from FilmZone backend
+// const heroSlides: any[] = [];
 
-const allItems: MediaItem[] = [
-  { id: '1', title: 'The Lost City', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/1.png' } as any, categories: ['Action', 'Thriller'], rating: '8.4', isSeries: false, year: '2022', studio: 'Paramount+' },
-  { id: '2', title: 'Undercurrents', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/2.png' } as any, categories: ['Comedy'], rating: '7.1', isSeries: true, year: '2023', studio: 'Netflix', episodes: '8', season: 'Season 1' },
-  { id: '3', title: 'Redemption Road', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/3.png' } as any, categories: ['Romance', 'Drama', 'Music'], rating: '6.3', isSeries: false, year: '2021', studio: 'Amazon Prime' },
-  { id: '4', title: 'Tales from the Underworld', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/4.png' } as any, categories: ['Comedy', 'Drama'], rating: '7.9', isSeries: true, year: '2024', studio: 'HBO Max', episodes: '12', season: 'Season 2' },
-  { id: '5', title: 'Voices from the Other Side', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/5.png' } as any, categories: ['Action', 'Thriller'], rating: '8.4', isSeries: false, year: '2023', studio: 'Disney+' },
-  { id: '6', title: 'The Unseen World', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/6.png' } as any, categories: ['Comedy'], rating: '7.1', isSeries: true, year: '2022', studio: 'Apple TV+', episodes: '6', season: 'Season 1' },
-  { id: '7', title: 'Midnight Express', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/16.png' } as any, categories: ['Thriller', 'Mystery'], rating: '7.9', isSeries: true, year: '2024', studio: 'Amazon Prime', episodes: '8', season: 'Season 1' },
-  { id: '8', title: 'City Lights', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/18.png' } as any, categories: ['Comedy', 'Romance'], rating: '7.5', isSeries: true, year: '2024', studio: 'Hulu', episodes: '6', season: 'Season 1' },
-  // Fabricated sample items for testing
-  { id: 'x1', title: 'Shadow of the Past', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/13.png' } as any, categories: ['Mystery', 'Thriller'], rating: '8.1', isSeries: false, year: '2024', studio: 'Netflix' },
-  { id: 'x2', title: 'Kingdom of Echoes', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/14.png' } as any, categories: ['Fantasy', 'Adventure'], rating: '7.8', isSeries: true, year: '2024', studio: 'HBO Max', episodes: '10', season: 'Season 1' },
-  // New items (5 newest)
-  { id: 'n1', title: 'Digital Dreams', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/15.png' } as any, categories: ['Action', 'Sci-Fi'], rating: '8.7', isSeries: false, year: '2024', studio: 'Netflix' },
-  { id: 'n2', title: 'Midnight Express', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/16.png' } as any, categories: ['Thriller', 'Mystery'], rating: '7.9', isSeries: true, year: '2024', studio: 'Amazon Prime', episodes: '8', season: 'Season 1' },
-  { id: 'n3', title: 'Ocean Waves', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/17.png' } as any, categories: ['Romance', 'Drama'], rating: '8.2', isSeries: false, year: '2024', studio: 'Disney+' },
-  { id: 'n4', title: 'City Lights', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/18.png' } as any, categories: ['Comedy', 'Romance'], rating: '7.5', isSeries: true, year: '2024', studio: 'Hulu', episodes: '6', season: 'Season 1' },
-  { id: 'n5', title: 'Space Odyssey', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/19.png' } as any, categories: ['Fantasy', 'Adventure'], rating: '8.9', isSeries: false, year: '2024', studio: 'Apple TV+' },
-];
-
-const nowWatching: MediaItem[] = [
-  { id: 'nw7', title: 'I Dream in Another Language', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/7.png' } as any, categories: ['Action', 'Triler'], rating: '8.4', isSeries: false },
-  { id: 'nw8', title: 'Undercurrents', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/8.png' } as any, categories: ['Comedy'], rating: '7.1', isSeries: true, episodes: '8', season: 'Season 1' },
-  { id: 'nw9', title: 'Tales from the Underworld', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/9.png' } as any, categories: ['Romance', 'Drama', 'Music'], rating: '6.3', isSeries: true, episodes: '12', season: 'Season 2' },
-  { id: 'nw10', title: 'Savage Beauty', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/10.png' } as any, categories: ['Comedy', 'Drama'], rating: '7.9', isSeries: false },
-  { id: 'nw11', title: 'The Unseen Journey', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/11.png' } as any, categories: ['Action', 'Triler'], rating: '8.4', isSeries: true, episodes: '6', season: 'Season 1' },
-  { id: 'nw12', title: 'Endless Horizon', cover: { uri: 'https://flixgo.volkovdesign.com/main/img/covers/12.png' } as any, categories: ['Comedy'], rating: '7.1', isSeries: false },
-];
+// Movies will be loaded from FilmZone backend
+// const allItems: MediaItem[] = [];
+// const nowWatching: MediaItem[] = [];
 
 export default function HomeScreen() {
-  const { subscription } = useSubscription();
   const { authState } = useAuth();
   const { t } = useLanguage();
-  const { addToMovieBox, removeFromMovieBox, isInMovieBox } = useMovieBox();
   const width = Dimensions.get('window').width;
 
   const gridColumns = width >= 1024 ? 3 : width >= 600 ? 2 : 2;
@@ -126,6 +80,10 @@ export default function HomeScreen() {
   const [selectedStudio, setSelectedStudio] = useState<Studio>('All');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [filterType, setFilterType] = useState<'genre' | 'year' | 'studio'>('genre');
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(true);
+  const [savedMovies, setSavedMovies] = useState<Set<number>>(new Set());
+  const [featuredMovies, setFeaturedMovies] = useState<MediaItem[]>([]);
+  const [trendingMovies, setTrendingMovies] = useState<MediaItem[]>([]);
   
   // Temporary filter states for the modal
   const [tempSelectedGenre, setTempSelectedGenre] = useState<Genre>('All');
@@ -149,38 +107,170 @@ export default function HomeScreen() {
     [t]
   );
 
-  const genres: Genre[] = ['All', 'Movies', 'TV Shows', 'Action', 'Comedy', 'Drama', 'Romance', 'Thriller', 'Mystery', 'Fantasy', 'Adventure', 'Music'];
+  const [genres, setGenres] = useState<Genre[]>(['All', 'Movies', 'TV Shows', 'Action', 'Comedy', 'Drama', 'Romance', 'Thriller', 'Mystery', 'Fantasy', 'Adventure', 'Music']);
   const years: Year[] = ['All', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010', '2009', '2008', '2007', '2006', '2005', '2004', '2003', '2002', '2001', '2000', '1999', '1998', '1997', '1996', '1995', '1994', '1993', '1992', '1991', '1990', '1989', '1988', '1987', '1986', '1985', '1984', '1983', '1982', '1981', '1980', '1979', '1978', '1977', '1976', '1975', '1974', '1973', '1972', '1971', '1970', '1969', '1968', '1967', '1966', '1965', '1964', '1963', '1962', '1961', '1960', '1959', '1958', '1957', '1956', '1955', '1954', '1953', '1952', '1951', '1950', '1949', '1948', '1947', '1946', '1945', '1944', '1943', '1942', '1941', '1940', '1939', '1938', '1937', '1936', '1935', '1934', '1933', '1932', '1931', '1930', '1929', '1928', '1927', '1926', '1925', '1924', '1923', '1922', '1921', '1920', '1919', '1918', '1917', '1916', '1915', '1914', '1913', '1912', '1911', '1910', '1909', '1908', '1907', '1906', '1905', '1904', '1903', '1902', '1901', '1900'];
-  const studios: Studio[] = ['All', 'Netflix', 'Disney+', 'HBO Max', 'Amazon Prime', 'Apple TV+', 'Paramount+', 'Hulu', 'Peacock', 'Showtime'];
+  const [studios, setStudios] = useState<Studio[]>(['All', 'Netflix', 'Disney+', 'HBO Max', 'Amazon Prime', 'Apple TV+', 'Paramount+', 'Hulu', 'Peacock', 'Showtime']);
+  const [tags, setTags] = useState<any[]>([]);
+  const [regions, setRegions] = useState<any[]>([]);
+  const [persons, setPersons] = useState<any[]>([]);
+  
+  // Data from backend
+  const [heroSlides, setHeroSlides] = useState<any[]>([]);
+  const [allItems, setAllItems] = useState<MediaItem[]>([]);
+  const [nowWatching, setNowWatching] = useState<MediaItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load data from Mock API (using sample data)
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const { movieAppApi } = await import('../../services/mock-api');
+        
+        // Load metadata
+        const [tagsResponse, regionsResponse, personsResponse] = await Promise.all([
+          movieAppApi.getAllTags(),
+          movieAppApi.getAllRegions(),
+          movieAppApi.getAllPersons()
+        ]);
+        
+        if (tagsResponse.errorCode === 200 && tagsResponse.data) {
+          setTags(tagsResponse.data);
+          const tagNames = tagsResponse.data.map((tag: any) => tag.tagName);
+          setGenres(['All', 'Movies', 'TV Shows', ...tagNames]);
+        }
+
+        if (regionsResponse.errorCode === 200 && regionsResponse.data) {
+          setRegions(regionsResponse.data);
+          const regionNames = regionsResponse.data.map((region: any) => region.regionName);
+          setStudios(['All', ...regionNames]);
+        }
+
+        if (personsResponse.errorCode === 200 && personsResponse.data) {
+          setPersons(personsResponse.data);
+        }
+        
+        // Load movie data
+        // Load content data
+        const [heroResponse, moviesResponse, featuredResponse, trendingResponse] = await Promise.all([
+          movieAppApi.getNewReleaseMovies(),
+          movieAppApi.getMoviesMainScreen(),
+          movieAppApi.getFeaturedMovies(),
+          movieAppApi.getTrendingMovies()
+        ]);
+        
+        if (heroResponse.errorCode === 200 && heroResponse.data) {
+          setHeroSlides(heroResponse.data);
+        }
+        
+        if (moviesResponse.errorCode === 200 && moviesResponse.data) {
+          setAllItems(moviesResponse.data);
+        }
+        
+        if (featuredResponse.errorCode === 200 && featuredResponse.data) {
+          setFeaturedMovies(featuredResponse.data);
+        }
+        
+        if (trendingResponse.errorCode === 200 && trendingResponse.data) {
+          setTrendingMovies(trendingResponse.data);
+        }
+        
+        // Load watch progress for "Now Watching"
+        if (authState.user) {
+          try {
+            const progressResponse = await movieAppApi.getWatchProgress();
+        if (progressResponse.errorCode === 200 && progressResponse.data) {
+          setNowWatching(progressResponse.data as unknown as MediaItem[]);
+        }
+          } catch (error) {
+            console.error('Error loading watch progress:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [authState.user]);
+
+  // Load saved movies
+  React.useEffect(() => {
+    const loadSavedMovies = async () => {
+      if (!authState.user) {
+        setSavedMovies(new Set());
+        return;
+      }
+      
+      try {
+        const { movieAppApi } = await import('../../services/mock-api');
+        const response = await movieAppApi.getSavedMovies();
+        if (response.errorCode === 200 && response.data) {
+          const savedIds = new Set<number>(response.data.map((movie: any) => movie.movieID));
+          setSavedMovies(savedIds);
+        }
+      } catch (error) {
+        console.error('Error loading saved movies:', error);
+      }
+    };
+    
+    loadSavedMovies();
+  }, [authState.user]);
+
+  // Load movies by category
+  const loadMoviesByCategory = async (categoryId: number) => {
+    try {
+      const { movieAppApi } = await import('../../services/mock-api');
+      const response = await movieAppApi.getMoviesByCategory(categoryId);
+      if (response.errorCode === 200 && response.data) {
+        return response.data;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error loading movies by category:', error);
+      return [];
+    }
+  };
 
   const filteredItems = useMemo(() => {
     let items = allItems;
     
     if (activeCategory === 'new') {
-      return allItems.filter(item => ['n1', 'n2', 'n3', 'n4', 'n5'].includes(item.id));
+      // Show all movies and series as "recently updated"
+      return allItems;
     }
     
-    // Apply all filters together (combine them)
-    if (selectedGenre !== 'All') {
-      if (selectedGenre === 'Movies') {
-        items = items.filter(item => !item.isSeries);
-      } else if (selectedGenre === 'TV Shows') {
-        items = items.filter(item => item.isSeries);
-      } else {
-        items = items.filter(item => item.categories.includes(selectedGenre));
+    if (activeCategory === 'genre') {
+      // Apply all filters together (combine them)
+      if (selectedGenre !== 'All') {
+        if (selectedGenre === 'Movies') {
+          items = items.filter(item => item.movieType === 'movie');
+        } else if (selectedGenre === 'TV Shows') {
+          items = items.filter(item => item.movieType === 'series');
+        } else {
+          // Filter by tag names
+          items = items.filter(item => 
+            item.categories?.includes(selectedGenre) || 
+            item.tags?.some(tag => tag.tagName === selectedGenre)
+          );
+        }
+      }
+      
+      if (selectedYear !== 'All') {
+        items = items.filter(item => item.year?.toString() === selectedYear);
+      }
+      
+      if (selectedStudio !== 'All') {
+        items = items.filter(item => 
+          item.studio === selectedStudio || 
+          item.region?.regionName === selectedStudio
+        );
       }
     }
     
-    if (selectedYear !== 'All') {
-      items = items.filter(item => item.year === selectedYear);
-    }
-    
-    if (selectedStudio !== 'All') {
-      items = items.filter(item => item.studio === selectedStudio);
-    }
-    
     return items;
-  }, [activeCategory, selectedGenre, selectedYear, selectedStudio]);
+  }, [activeCategory, selectedGenre, selectedYear, selectedStudio, allItems]);
 
   const go404 = async () => {
     try { await Haptics.selectionAsync(); } catch {}
@@ -189,15 +279,52 @@ export default function HomeScreen() {
 
   const openHeroDetails = async (slide: any) => {
     try { await Haptics.selectionAsync(); } catch {}
+    
+    // Add movie to watch progress when clicked
+    try {
+      const { movieAppApi } = await import('../../services/mock-api');
+      const response = await movieAppApi.addToWatchProgress(parseInt(slide.id));
+      
+      if (response.success) {
+        // Refresh now watching list
+        const progressResponse = await movieAppApi.getWatchProgress();
+        if (progressResponse.errorCode === 200 && progressResponse.data) {
+          setNowWatching(progressResponse.data as unknown as MediaItem[]);
+        }
+      }
+    } catch (error) {
+      console.log('Error adding to watch progress:', error);
+    }
+    
     // Navigate directly to video player
     router.push({ pathname: '/player/[id]', params: { id: slide.id, title: slide.title, type: slide.isSeries ? 'series' : 'movie' } });
   };
   const openDetails = async (m: MediaItem) => {
     try { await Haptics.selectionAsync(); } catch {}
-    const isSeries = typeof m.isSeries === 'boolean' ? m.isSeries : Math.random() < 0.5;
+    
+    // Add movie to watch progress when clicked
+    try {
+      const { movieAppApi } = await import('../../services/mock-api');
+      const response = await movieAppApi.addToWatchProgress(m.movieID);
+      
+      if (response.success) {
+        // Update watch progress with current position
+        await movieAppApi.updateWatchProgress(m.movieID, 0, 0);
+        
+        // Refresh now watching list
+        const progressResponse = await movieAppApi.getWatchProgress();
+        if (progressResponse.errorCode === 200 && progressResponse.data) {
+          setNowWatching(progressResponse.data as unknown as MediaItem[]);
+        }
+      }
+    } catch (error) {
+      console.log('Error adding to watch progress:', error);
+    }
+    
+    const isSeries = typeof m.isSeries === 'boolean' ? m.isSeries : m.movieType === 'series';
     const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
     // Add mock metadata for demo items
-    const baseParams: any = { id: m.id, title: m.title, cover: (m as any).cover?.uri ?? '', categories: m.categories.join(' • '), rating: m.rating };
+    const baseParams: any = { id: m.id || m.movieID.toString(), title: m.title, cover: (m as any).cover?.uri ?? m.image, categories: m.categories?.join(' • ') || '', rating: m.rating || m.popularity?.toString() || '0' };
     if (m.id === 'x1') {
       Object.assign(baseParams, { year: '2024', duration: '126 min', country: 'USA', cast: 'A. Johnson, M. Rivera', description: 'Một thám tử trở về quê nhà điều tra chuỗi vụ án liên quan đến quá khứ của chính mình.' });
     }
@@ -210,24 +337,36 @@ export default function HomeScreen() {
   const handleMovieBoxToggle = async (item: MediaItem) => {
     try {
       await Haptics.selectionAsync();
-      if (isInMovieBox(item.id)) {
-        removeFromMovieBox(item.id);
-      } else {
-        addToMovieBox({
-          id: item.id,
-          title: item.title,
-          cover: (item as any).cover?.uri ?? '',
-          categories: item.categories,
-          rating: item.rating,
-          isSeries: item.isSeries,
-          year: item.year,
-          studio: item.studio,
-          episodes: item.episodes,
-          season: item.season,
+      
+      if (!authState.user) {
+        Alert.alert('Login Required', 'Please login to save movies to your list');
+        return;
+      }
+      
+      const { movieAppApi } = await import('../../services/mock-api');
+      
+      // Check if movie is already saved
+      const savedResponse = await movieAppApi.getSavedMovies();
+      const isSaved = savedResponse.data?.some((saved: any) => saved.movieID === item.movieID);
+      
+      if (isSaved) {
+        // Remove from saved movies
+        await movieAppApi.removeFromSavedMovies(item.movieID);
+        setSavedMovies(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(item.movieID);
+          return newSet;
         });
+        Alert.alert('Success', 'Movie removed from your list');
+      } else {
+        // Add to saved movies
+        await movieAppApi.addToSavedMovies(item.movieID);
+        setSavedMovies(prev => new Set([...prev, item.movieID]));
+        Alert.alert('Success', 'Movie added to your list');
       }
     } catch (error) {
       console.log('Error toggling MovieBox:', error);
+      Alert.alert('Error', 'Failed to update your movie list');
     }
   };
 
@@ -280,17 +419,63 @@ export default function HomeScreen() {
       </View>
 
       {/* Subscription Status Banner */}
-      {!subscription.isActive && authState.isAuthenticated && (
+      {authState.isAuthenticated && showWelcomeBanner && (
         <View style={styles.subscriptionBanner}>
           <Text style={styles.subscriptionBannerText}>
-            {t('home.upgrade_premium')}
+            Welcome to FilmZone!
           </Text>
           <Pressable 
-            style={styles.subscriptionBannerBtn}
-            onPress={() => router.push('/profile')}
+            style={styles.closeButton}
+            onPress={() => setShowWelcomeBanner(false)}
           >
-            <Text style={styles.subscriptionBannerBtnText}>{t('home.upgrade_now')}</Text>
+            <Ionicons name="close" size={20} color="#fff" />
           </Pressable>
+        </View>
+      )}
+
+      {/* Featured Movies */}
+      {featuredMovies.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Featured Movies</Text>
+          <FlatList
+            data={featuredMovies}
+            keyExtractor={(item) => item.movieID.toString()}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.movieCard}
+                onPress={() => openDetails(item)}
+              >
+                <Image source={{ uri: item.image }} style={styles.movieImage} contentFit="cover" />
+                <Text style={styles.movieTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.movieRating}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      )}
+
+      {/* Trending Movies */}
+      {trendingMovies.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Trending Now</Text>
+          <FlatList
+            data={trendingMovies}
+            keyExtractor={(item) => item.movieID.toString()}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.movieCard}
+                onPress={() => openDetails(item)}
+              >
+                <Image source={{ uri: item.image }} style={styles.movieImage} contentFit="cover" />
+                <Text style={styles.movieTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.movieRating}>{item.popularity?.toFixed(1) || '8.0'}</Text>
+              </Pressable>
+            )}
+          />
         </View>
       )}
 
@@ -306,13 +491,24 @@ export default function HomeScreen() {
               style={[styles.tabBtn, activeCategory === t.key && styles.tabBtnActive]}
               onPress={() => {
                 if (t.key === 'genre') {
+                  // Initialize temp values with current selected values
+                  setTempSelectedGenre(selectedGenre);
+                  setTempSelectedYear(selectedYear);
+                  setTempSelectedStudio(selectedStudio);
                   setShowFilterModal(true);
+                  // Also set active category to genre to show filtered content
+                  setActiveCategory('genre');
                 } else {
                   setActiveCategory(t.key);
                 }
               }}
             >
               <Text style={[styles.tabText, activeCategory === t.key && styles.tabTextActive]}>{t.title}</Text>
+              {t.key === 'genre' && (selectedGenre !== 'All' || selectedYear !== 'All' || selectedStudio !== 'All') && (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>!</Text>
+                </View>
+              )}
           </TouchableOpacity>
         ))}
       </View>
@@ -321,22 +517,22 @@ export default function HomeScreen() {
         {/* Content based on active category */}
       {!recentExpanded ? (
         <>
-          <FlatList
-            data={filteredItems.slice(0, 4)}
-            keyExtractor={(i) => i.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
+            <FlatList
+              data={filteredItems.slice(0, 4)}
+              keyExtractor={(i) => i.id || i.movieID.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 16 }}
             ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
             renderItem={({ item }) => (
               <Pressable onPress={() => openDetails(item as any)} style={({ pressed }) => [styles.recentCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
-                <ImageWithPlaceholder source={item.cover} style={styles.recentCover} showRedBorder={false} />
+                <ImageWithPlaceholder source={item.cover || item.image} style={styles.recentCover} showRedBorder={false} />
                 <Text numberOfLines={1} style={styles.recentTitle}>{item.title}</Text>
-                <Text numberOfLines={1} style={styles.recentCats}>{item.categories.join(' • ')}</Text>
-                {item.isSeries && item.episodes && (
-                  <Text numberOfLines={1} style={styles.recentEpisodes}>{item.season} • {item.episodes} tập</Text>
+                <Text numberOfLines={1} style={styles.recentCats}>{item.categories?.join(' • ') || ''}</Text>
+                {item.isSeries && item.totalSeasons && (
+                  <Text numberOfLines={1} style={styles.recentEpisodes}>{item.totalSeasons} {t('details.seasons').toLowerCase()}</Text>
                 )}
-                <Text style={styles.recentRate}>{item.rating}</Text>
+                <Text style={styles.recentRate}>{item.rating || item.popularity?.toString()}</Text>
               </Pressable>
             )}
           />
@@ -346,11 +542,11 @@ export default function HomeScreen() {
         </>
       ) : (
         <>
-      <View style={styles.grid}> 
-            {filteredItems.map((m) => (
-              <Pressable key={m.id} onPress={() => openDetails(m as any)} style={({ pressed }) => [styles.card, { width: (width - 32 - (gridColumns - 1) * 16) / gridColumns }, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}> 
+        <View style={styles.grid}> 
+              {filteredItems.map((m) => (
+               <Pressable key={m.id || m.movieID} onPress={() => openDetails(m as any)} style={({ pressed }) => [styles.card, { width: (width - 32 - (gridColumns - 1) * 16) / gridColumns }, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}> 
             <View style={styles.coverWrap}>
-                  <ImageWithPlaceholder source={m.cover} style={styles.cover} showRedBorder={false} />
+                  <ImageWithPlaceholder source={m.cover || m.image} style={styles.cover} showRedBorder={false} />
                   <Pressable
                     style={styles.bookmarkButton}
                     onPress={(e) => {
@@ -359,20 +555,20 @@ export default function HomeScreen() {
                     }}
                   >
                     <Ionicons 
-                      name={isInMovieBox(m.id) ? "bookmark" : "bookmark-outline"} 
+                      name={savedMovies.has(m.movieID) ? "bookmark" : "bookmark-outline"} 
                       size={20} 
-                      color={isInMovieBox(m.id) ? "#e50914" : "#fff"} 
+                      color={savedMovies.has(m.movieID) ? "#e50914" : "#fff"} 
                     />
                   </Pressable>
             </View>
             <View style={styles.cardBody}>
               <Text numberOfLines={1} style={styles.cardTitle}>{m.title}</Text>
-              <Text numberOfLines={1} style={styles.cardCategories}>{m.categories.join(' • ')}</Text>
-              {m.isSeries && m.episodes && (
-                <Text numberOfLines={1} style={styles.cardEpisodes}>{m.season} • {m.episodes} tập</Text>
+              <Text numberOfLines={1} style={styles.cardCategories}>{m.categories?.join(' • ') || ''}</Text>
+              {m.isSeries && m.totalSeasons && (
+                <Text numberOfLines={1} style={styles.cardEpisodes}>{m.totalSeasons} {t('details.seasons').toLowerCase()}</Text>
               )}
               <View style={styles.cardMetaRow}>
-                <Text style={styles.cardRate}>{m.rating}</Text>
+                <Text style={styles.cardRate}>{m.rating || m.popularity?.toString()}</Text>
                 <Text style={styles.cardBadges}>HD • 16+</Text>
               </View>
             </View>
@@ -447,74 +643,111 @@ export default function HomeScreen() {
               ))}
             </ScrollView>
             
-            <Pressable
-              style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.7 }]}
-              onPress={() => {
-                // Apply the temporary filters to the actual filters
-                setSelectedGenre(tempSelectedGenre);
-                setSelectedYear(tempSelectedYear);
-                setSelectedStudio(tempSelectedStudio);
-                setShowFilterModal(false);
-              }}
-            >
-              <Text style={styles.modalCloseText}>{t('filter.apply')}</Text>
-            </Pressable>
+            <View style={styles.modalButtonRow}>
+              <Pressable
+                style={({ pressed }) => [styles.modalResetBtn, pressed && { opacity: 0.7 }]}
+                onPress={() => {
+                  setTempSelectedGenre('All');
+                  setTempSelectedYear('All');
+                  setTempSelectedStudio('All');
+                }}
+              >
+                <Text style={styles.modalResetText}>{t('filter.reset')}</Text>
+              </Pressable>
+              
+              <Pressable
+                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.7 }]}
+                onPress={() => {
+                  // Apply the temporary filters to the actual filters
+                  setSelectedGenre(tempSelectedGenre);
+                  setSelectedYear(tempSelectedYear);
+                  setSelectedStudio(tempSelectedStudio);
+                  setShowFilterModal(false);
+                }}
+              >
+                <Text style={styles.modalCloseText}>{t('filter.apply')}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
 
       {/* Now Watching carousel */}
       <Text style={styles.sectionTitle}>{t('home.now_watching')}</Text>
-      <FlatList
-        data={nowWatching}
-        keyExtractor={(i) => i.id}
-        horizontal
-        showsHorizontalScrollIndicator={false}
+        <FlatList
+          data={nowWatching}
+          keyExtractor={(i) => i.id || i.movieID.toString()}
+          horizontal
+          showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
         renderItem={({ item }) => (
           <Pressable onPress={() => openDetails(item as any)} style={({ pressed }) => [styles.nowCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
-            <ImageWithPlaceholder source={item.cover} style={styles.nowCover} showRedBorder={false} />
+            <ImageWithPlaceholder source={item.cover || item.image} style={styles.nowCover} showRedBorder={false} />
             <Text numberOfLines={1} style={styles.nowTitle}>{item.title}</Text>
-            <Text numberOfLines={1} style={styles.nowCats}>{item.categories.join(' • ')}</Text>
+            <Text numberOfLines={1} style={styles.nowCats}>{item.categories?.join(' • ') || ''}</Text>
             {item.isSeries && item.episodes && (
               <Text numberOfLines={1} style={styles.nowEpisodes}>{item.season} • {item.episodes} tập</Text>
             )}
-            <Text style={styles.nowRate}>{item.rating}</Text>
+            <Text style={styles.nowRate}>{item.rating || item.popularity?.toString()}</Text>
           </Pressable>
         )}
       />
 
       {/* Plans */}
-      <Text style={styles.sectionTitle}>{t('home.select_plan')}</Text>
+      <Text style={styles.sectionTitle}>
+        {authState.user?.subscription ? t('home.your_current_plan') : t('home.select_plan')}
+      </Text>
       <View style={styles.plansRow}>
-        <Plan 
-          title={t('plan.starter')} 
-          price={t('plan.free')} 
-          features={["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
-          cta={subscription.currentPlan?.id === 'starter' ? t('plan.current_plan') : t('plan.choose_plan')} 
-          highlight={subscription.currentPlan?.id === 'starter'}
-          onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-          t={t}
-        />
-        <Plan 
-          title={t('plan.premium')} 
-          price="$19.99" 
-          features={["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"]} 
-          cta={subscription.currentPlan?.id === 'premium' ? t('plan.current_plan') : t('plan.choose_plan')} 
-          highlight={subscription.currentPlan?.id === 'premium'}
-          onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-          t={t}
-        />
-        <Plan 
-          title={t('plan.cinematic')} 
-          price="$39.99" 
-          features={["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"]} 
-          cta={subscription.currentPlan?.id === 'cinematic' ? t('plan.current_plan') : t('plan.choose_plan')} 
-          highlight={subscription.currentPlan?.id === 'cinematic'}
-          onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-          t={t}
-        />
+        {authState.user?.subscription ? (
+          // Show current plan only
+          <Plan 
+            title={authState.user.subscription.plan === 'premium' ? t('plan.premium') : 
+                   authState.user.subscription.plan === 'cinematic' ? t('plan.cinematic') : t('plan.starter')} 
+            price={authState.user.subscription.plan === 'premium' ? '$19.99' : 
+                   authState.user.subscription.plan === 'cinematic' ? '$39.99' : t('plan.free')} 
+            features={authState.user.subscription.plan === 'premium' ? 
+              ["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"] :
+              authState.user.subscription.plan === 'cinematic' ?
+              ["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"] :
+              ["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
+            cta={t('plan.manage_plan')} 
+            highlight={authState.user.subscription.plan !== 'starter'}
+            onPress={() => router.push('/profile')} 
+            t={t}
+          />
+        ) : (
+          // Show all plans for selection
+          <>
+            <Plan 
+              title={t('plan.starter')} 
+              price={t('plan.free')} 
+              features={["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
+              cta={t('plan.choose_plan')} 
+              highlight={false}
+              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+              t={t}
+            />
+            <Plan 
+              title={t('plan.premium')} 
+              price="$19.99" 
+              features={["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"]} 
+              cta={t('plan.choose_plan')} 
+              highlight={false}
+              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+              t={t}
+            />
+            <Plan 
+              title={t('plan.cinematic')} 
+              price="$39.99" 
+              features={["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"]} 
+              cta={t('plan.choose_plan')} 
+              highlight={false}
+              onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+              t={t}
+            />
+          </>
+        )}
       </View>
 
       {/* Partners (static) */}
@@ -568,12 +801,19 @@ const styles = StyleSheet.create({
   pagerDotActive: { backgroundColor: '#e50914' },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginHorizontal: 16, marginBottom: 10 },
   sectionText: { color: '#c7c7cc', marginHorizontal: 16, marginBottom: 10, fontSize: 12 },
+  sectionContainer: { marginBottom: 20 },
+  movieCard: { width: 120, marginRight: 12, marginLeft: 16 },
+  movieImage: { width: '100%', height: 160, borderRadius: 8 },
+  movieTitle: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 6, marginBottom: 2 },
+  movieRating: { color: '#ffd166', fontSize: 10, fontWeight: '600' },
 
   tabsRow: { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 8 },
-  tabBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: '#1c1c23' },
+  tabBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: '#1c1c23', position: 'relative' },
   tabBtnActive: { backgroundColor: '#292935' },
   tabText: { color: '#b0b0b8', fontWeight: '600' },
   tabTextActive: { color: '#fff' },
+  filterBadge: { position: 'absolute', top: -2, right: -2, backgroundColor: '#ffd166', borderRadius: 8, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
+  filterBadgeText: { color: '#000', fontSize: 10, fontWeight: '700' },
 
   grid: { paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   card: { backgroundColor: '#121219', borderRadius: 10, overflow: 'hidden', marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
@@ -642,6 +882,14 @@ const styles = StyleSheet.create({
   subscriptionBannerText: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1, marginRight: 12 },
   subscriptionBannerBtn: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
   subscriptionBannerBtnText: { color: '#e50914', fontSize: 12, fontWeight: '700' },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   
   // Recently Updated (collapsed) styles
   recentCard: { width: 136, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
@@ -672,7 +920,10 @@ const styles = StyleSheet.create({
   filterText: { color: '#c7c7cc', fontSize: 16 },
   filterTextActive: { color: '#e50914', fontWeight: '700' },
   
-  modalCloseBtn: { backgroundColor: '#e50914', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 },
+  modalButtonRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, gap: 12 },
+  modalResetBtn: { backgroundColor: '#1c1c23', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: 'center', flex: 1 },
+  modalResetText: { color: '#8e8e93', fontWeight: '700' },
+  modalCloseBtn: { backgroundColor: '#e50914', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: 'center', flex: 1 },
   modalCloseText: { color: '#fff', fontWeight: '700' },
 
 });

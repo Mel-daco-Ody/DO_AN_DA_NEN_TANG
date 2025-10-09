@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Pressable, Dimensions, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,8 +45,31 @@ const actorData = {
 export default function ActorScreen() {
   const { id } = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState('filmography');
-  
-  const actor = actorData[id as keyof typeof actorData] || actorData['1'];
+  const [actor, setActor] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadActor = async () => {
+      try {
+        const { movieAppApi } = await import('../../services/mock-api');
+        const response = await movieAppApi.getActorById(parseInt(id as string));
+        if (response.errorCode === 200) {
+          setActor(response.data);
+        } else {
+          // Fallback to mock data if API fails
+          setActor(actorData[id as keyof typeof actorData] || actorData['1']);
+        }
+      } catch (error) {
+        console.error('Error loading actor:', error);
+        // Fallback to mock data
+        setActor(actorData[id as keyof typeof actorData] || actorData['1']);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadActor();
+  }, [id]);
 
   const renderFilmographyItem = ({ item }: { item: any }) => (
     <Pressable 
@@ -77,6 +100,40 @@ export default function ActorScreen() {
     </Pressable>
   );
 
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#e50914" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Actor Details</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!actor) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#e50914" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Actor Details</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Actor not found</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
@@ -92,14 +149,14 @@ export default function ActorScreen() {
       <View style={styles.heroSection}>
         <View style={styles.heroOverlay} />
         <View style={styles.heroContent}>
-          <Text style={styles.actorName}>{actor.name}</Text>
+          <Text style={styles.actorName}>{actor.fullName}</Text>
         </View>
       </View>
 
       {/* Actor Details */}
       <View style={styles.detailsSection}>
         <View style={styles.actorCard}>
-          <ImageWithPlaceholder source={{ uri: actor.image }} style={styles.actorImage} showRedBorder={false} />
+          <ImageWithPlaceholder source={{ uri: actor.avatar }} style={styles.actorImage} showRedBorder={false} />
           <View style={styles.actorInfo}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Career:</Text>
@@ -251,4 +308,17 @@ const styles = StyleSheet.create({
   photosGrid: { paddingTop: 10 },
   photoItem: { width: (width - 48) / 2, marginRight: 16, marginBottom: 16 },
   photoImage: { width: '100%', height: 200, borderRadius: 8 },
+  
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });

@@ -1,12 +1,14 @@
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as React from 'react';
+import { useState, useEffect } from 'react';
 import ImageWithPlaceholder from '../../../components/ImageWithPlaceholder';
 import FlixGoLogo from '../../../components/FlixGoLogo';
 import WaveAnimation from '../../../components/WaveAnimation';
-import { useMovieBox } from '../../../contexts/MovieBoxContext';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useLanguage } from '../../../contexts/LanguageContext';
 
 function safe(value?: string | string[], fallback: string = 'N/A') {
   if (!value) return fallback;
@@ -16,36 +18,150 @@ function safe(value?: string | string[], fallback: string = 'N/A') {
 
 export default function MovieDetailsScreen() {
   const { id, title, cover, categories, rating, year, duration, country, cast, description } = useLocalSearchParams();
-  const { addToMovieBox, removeFromMovieBox, isInMovieBox } = useMovieBox();
+  const { authState } = useAuth();
+  const { t } = useLanguage();
+  const [movie, setMovie] = useState<any>(null);
+
+  useEffect(() => {
+    const loadMovie = async () => {
+      try {
+        const { movieAppApi } = await import('../../../services/mock-api');
+        const response = await movieAppApi.getActorsByMovie(parseInt(id as string));
+        if (response.errorCode === 200) {
+          setMovie({ cast: response.data });
+        }
+      } catch (error) {
+        console.error('Error loading movie cast:', error);
+      }
+    };
+
+    loadMovie();
+  }, [id]);
   const width = Dimensions.get('window').width;
-  const [likes, setLikes] = React.useState(128);
-  const [unlikes, setUnlikes] = React.useState(3);
+  const [likes, setLikes] = React.useState(0);
+  const [unlikes, setUnlikes] = React.useState(0);
   const [liked, setLiked] = React.useState<boolean | null>(null);
   const [commentText, setCommentText] = React.useState('');
-  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([
-    { author: 'Khách', text: 'Trông có vẻ hấp dẫn, chờ ngày phát hành!' },
-    { author: 'Mai', text: 'Mong có phụ đề tiếng Việt sớm.' },
-  ]);
+  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
+  
+  // Backend data
+  const [movieData, setMovieData] = React.useState<any>(null);
+  const [userRating, setUserRating] = React.useState<any>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isSaved, setIsSaved] = React.useState(false);
+
+  // Load movie data from backend
+  React.useEffect(() => {
+    const loadMovieData = async () => {
+      try {
+        const { movieAppApi } = await import('../../../services/mock-api');
+        
+        // Load movie details
+        const movieResponse = await movieAppApi.getMovieById(parseInt(id as string));
+        if (movieResponse.errorCode === 200) {
+          setMovieData(movieResponse.data);
+        }
+        
+        // Load comments
+        const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
+        if (commentsResponse.errorCode === 200) {
+          setComments(commentsResponse.data || []);
+        }
+        
+        // Load user rating and saved status
+        if (authState.user) {
+          const [ratingResponse, savedResponse] = await Promise.all([
+            movieAppApi.getUserRating(parseInt(id as string)),
+            movieAppApi.isMovieSaved(parseInt(id as string))
+          ]);
+          
+          if (ratingResponse.errorCode === 200) {
+            setUserRating(ratingResponse.data);
+          }
+          
+          if (savedResponse.errorCode === 200) {
+            setIsSaved(savedResponse.data?.isSaved || false);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading movie data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadMovieData();
+  }, [id, authState.user]);
 
   const handleMovieBoxToggle = async () => {
     try {
-      if (isInMovieBox(safe(id))) {
-        removeFromMovieBox(safe(id));
+      if (!authState.user) {
+        Alert.alert('Login Required', 'Please login to save movies to your list');
+        return;
+      }
+      
+      const { movieAppApi } = await import('../../../services/mock-api');
+      
+      if (isSaved) {
+        // Remove from saved movies
+        await movieAppApi.removeFromSavedMovies(parseInt(id as string));
+        setIsSaved(false);
+        Alert.alert('Success', 'Movie removed from your list');
       } else {
-        addToMovieBox({
-          id: safe(id),
-          title: safe(title),
-          cover: safe(cover),
-          categories: safe(categories).split(' • '),
-          rating: safe(rating),
-          isSeries: false,
-          year: safe(year),
-          studio: 'N/A',
-        });
+        // Add to saved movies
+        await movieAppApi.addToSavedMovies(parseInt(id as string));
+        setIsSaved(true);
+        Alert.alert('Success', 'Movie added to your list');
       }
     } catch (error) {
       console.log('Error toggling MovieBox:', error);
+      Alert.alert('Error', 'Failed to update your movie list');
+    }
+  };
+
+  const handleAddRating = async (stars: number) => {
+    if (!authState.user) {
+      Alert.alert('Login Required', 'Please login to rate movies');
+      return;
+    }
+    
+    try {
+      const { movieAppApi } = await import('../../../services/mock-api');
+      const response = await movieAppApi.addUserRating(parseInt(id as string), stars);
+      
+      if (response.errorCode === 200) {
+        setUserRating(response.data);
+        Alert.alert('Success', `You rated this movie ${stars} star${stars > 1 ? 's' : ''}`);
+      }
+    } catch (error) {
+      console.log('Error adding rating:', error);
+      Alert.alert('Error', 'Failed to add rating');
+    }
+  };
+
+  const handleAddReview = async (reviewData: any) => {
+    if (!authState.user) {
+      Alert.alert('Login Required', 'Please login to add reviews');
+      return;
+    }
+    
+    try {
+      const { movieAppApi } = await import('../../../services/mock-api');
+      const response = await movieAppApi.addReview(reviewData);
+      
+      if (response.errorCode === 200) {
+        Alert.alert('Success', 'Review added successfully');
+        // Refresh reviews
+        const reviewsResponse = await movieAppApi.getReviewsByMovie(id as string);
+        if (reviewsResponse.errorCode === 200) {
+          // Handle reviews data
+          console.log('Reviews loaded:', reviewsResponse.data);
+        }
+      }
+    } catch (error) {
+      console.log('Error adding review:', error);
+      Alert.alert('Error', 'Failed to add review');
     }
   };
 
@@ -61,9 +177,9 @@ export default function MovieDetailsScreen() {
         </View>
         <Pressable style={styles.bookmarkBtn} onPress={handleMovieBoxToggle}>
           <Ionicons 
-            name={isInMovieBox(safe(id)) ? "bookmark" : "bookmark-outline"} 
+            name={isSaved ? "bookmark" : "bookmark-outline"} 
             size={24} 
-            color={isInMovieBox(safe(id)) ? "#e50914" : "#fff"} 
+            color={isSaved ? "#e50914" : "#fff"} 
           />
         </Pressable>
       </View>
@@ -100,11 +216,11 @@ export default function MovieDetailsScreen() {
 
       {/* Introduction Section - No Container */}
       <View style={styles.introSection}>
-        <Text style={styles.sectionTitle}>Giới thiệu</Text>
-        <Text style={styles.kv}>Năm phát hành: <Text style={styles.kvVal}>{safe(year)}</Text></Text>
-        <Text style={styles.kv}>Thời lượng: <Text style={styles.kvVal}>{safe(duration)}</Text></Text>
-        <Text style={styles.kv}>Quốc gia: <Text style={styles.kvVal}>{safe(country)}</Text></Text>
-        <Text style={styles.kv}>Thể loại: <Text style={styles.kvVal}>Action, Thriller</Text></Text>
+        <Text style={styles.sectionTitle}>{t('details.introduction')}</Text>
+        <Text style={styles.kv}>{t('details.release_year')}: <Text style={styles.kvVal}>{safe(year)}</Text></Text>
+        <Text style={styles.kv}>{t('details.duration')}: <Text style={styles.kvVal}>{safe(duration)}</Text></Text>
+        <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{safe(country)}</Text></Text>
+        <Text style={styles.kv}>{t('details.genre')}: <Text style={styles.kvVal}>Action, Thriller</Text></Text>
         <View style={styles.categoryLinks}>
           <Pressable onPress={() => router.push('/category/Action' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
             <Text style={styles.categoryLinkText}>Action</Text>
@@ -113,32 +229,114 @@ export default function MovieDetailsScreen() {
             <Text style={styles.categoryLinkText}>Thriller</Text>
           </Pressable>
         </View>
-        <Text style={styles.kv}>Diễn viên: <Text style={styles.kvVal}>Michelle Rodriguez, Vin Diesel, Paul Walker</Text></Text>
+        <Text style={styles.kv}>{t('details.actors')}: <Text style={styles.kvVal}>{movie?.cast?.map((cast: any) => cast.characterName || cast.fullName).join(', ') || 'N/A'}</Text></Text>
         <View style={styles.actorLinks}>
-          <Pressable onPress={() => router.push('/actor/1' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Michelle Rodriguez</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/actor/2' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Vin Diesel</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/actor/3' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Paul Walker</Text>
-          </Pressable>
+          {movie?.cast?.slice(0, 3).map((cast: any, index: number) => (
+            <Pressable 
+              key={cast.personID || index} 
+              onPress={() => router.push(`/actor/${cast.personID}` as any)} 
+              style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}
+            >
+              <Text style={styles.actorLinkText}>{cast.fullName}</Text>
+            </Pressable>
+          ))}
         </View>
         <Text style={[styles.sectionText, { marginTop: 8 }]}>{safe(description, 'N/A')}</Text>
       </View>
 
-      {/* Advertisement Banner - Full Width */}
-      <View style={styles.adBanner}>
-        <View style={styles.adPlaceholder}>
-          <Text style={styles.adPlaceholderText}>Banner quảng cáo</Text>
+      {/* Rating Section */}
+      <View style={styles.container}>
+        <Text style={styles.sectionTitle}>Rate This Movie</Text>
+        <View style={styles.ratingContainer}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Pressable
+              key={star}
+              onPress={() => handleAddRating(star)}
+              style={styles.starButton}
+            >
+              <Ionicons 
+                name={userRating?.stars && star <= userRating.stars ? "star" : "star-outline"} 
+                size={24} 
+                color={userRating?.stars && star <= userRating.stars ? "#ffd166" : "#666"} 
+              />
+            </Pressable>
+          ))}
         </View>
+        {userRating && (
+          <Text style={styles.ratingText}>You rated this movie {userRating.stars} star{userRating.stars > 1 ? 's' : ''}</Text>
+        )}
       </View>
 
+      {/* Comments Section */}
+      <View style={styles.container}>
+        <Text style={styles.sectionTitle}>Comments</Text>
+        {authState.user ? (
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Add a comment..."
+              placeholderTextColor="#666"
+              multiline
+              numberOfLines={3}
+              onChangeText={setCommentText}
+              value={commentText}
+            />
+            <Pressable
+              style={styles.commentButton}
+              onPress={() => {
+                if (commentText.trim()) {
+                  handleAddComment(commentText.trim());
+                  setCommentText('');
+                }
+              }}
+            >
+              <Text style={styles.commentButtonText}>Post Comment</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Text style={styles.loginPrompt}>Please login to add comments</Text>
+        )}
+        
+        {comments.length > 0 ? (
+          <View style={styles.commentsList}>
+            {comments.map((comment: any, index: number) => (
+              <View key={comment.commentID || index} style={styles.commentItem}>
+                <Text style={styles.commentAuthor}>User {comment.userID}</Text>
+                <Text style={styles.commentContent}>{comment.content}</Text>
+                <Text style={styles.commentDate}>{new Date(comment.createdAt).toLocaleDateString()}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.noComments}>No comments yet. Be the first to comment!</Text>
+        )}
+      </View>
+      <View style={styles.adBanner}>
+        <Pressable 
+          style={({ pressed }) => [styles.adContainer, pressed && { opacity: 0.9 }]}
+          onPress={() => {
+            // Handle ad click
+            console.log('Ad clicked');
+          }}
+        >
+          <ImageWithPlaceholder 
+            source={{ uri: 'https://images.unsplash.com/photo-1489599803004-0b2b0a0b0b0b?w=800&h=200&fit=crop' }}
+            style={styles.adImage}
+            showRedBorder={false}
+          />
+          <View style={styles.adOverlay}>
+            <Text style={styles.adTitle}>🎬 Disney+ Hotstar</Text>
+            <Text style={styles.adSubtitle}>Xem phim bom tấn mới nhất</Text>
+            <View style={styles.adBadge}>
+              <Text style={styles.adBadgeText}>QUẢNG CÁO</Text>
+            </View>
+          </View>
+        </Pressable>
+      </View>
 
       {/* Like / Unlike */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Đánh giá</Text>
+        <Text style={styles.sectionTitle}>{t('details.rating')}</Text>
         <View style={styles.likeRow}>
           <Pressable
             onPress={() => {
@@ -163,14 +361,14 @@ export default function MovieDetailsScreen() {
 
       {/* Comments */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Bình luận</Text>
+        <Text style={styles.sectionTitle}>{t('details.comments')}</Text>
         <View style={styles.commentForm}>
           <View style={styles.commentAvatar}>
             <Text style={styles.commentAvatarText}>U</Text>
           </View>
           <View style={styles.commentInputContainer}>
             <TextInput
-              placeholder="Viết bình luận của bạn..."
+              placeholder={t('details.write_comment')}
               placeholderTextColor="#8e8e93"
               value={commentText}
               onChangeText={setCommentText}
@@ -186,7 +384,7 @@ export default function MovieDetailsScreen() {
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
-              <Text style={styles.commentBtnText}>Gửi</Text>
+              <Text style={styles.commentBtnText}>{t('details.post_comment')}</Text>
             </Pressable>
           </View>
         </View>
@@ -275,9 +473,53 @@ const styles = StyleSheet.create({
   introSection: { paddingHorizontal: 16, paddingVertical: 20 },
   
   // Advertisement Banner - Full Width
-  adBanner: { paddingVertical: 16 },
-  adPlaceholder: { height: 80, backgroundColor: '#2b2b31', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  adPlaceholderText: { color: '#8e8e93', fontSize: 14 },
+  adBanner: { paddingVertical: 16, paddingHorizontal: 16 },
+  adContainer: { 
+    height: 120, 
+    borderRadius: 12, 
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#2b2b31'
+  },
+  adImage: { 
+    width: '100%', 
+    height: '100%' 
+  },
+  adOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    padding: 16
+  },
+  adTitle: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '700', 
+    marginBottom: 4,
+    textAlign: 'center'
+  },
+  adSubtitle: { 
+    color: '#c7c7cc', 
+    fontSize: 14, 
+    marginBottom: 8,
+    textAlign: 'center'
+  },
+  adBadge: { 
+    backgroundColor: '#e50914', 
+    paddingHorizontal: 8, 
+    paddingVertical: 4, 
+    borderRadius: 4 
+  },
+  adBadgeText: { 
+    color: '#fff', 
+    fontSize: 10, 
+    fontWeight: '700' 
+  },
   poster: { width: 110, height: 160, borderRadius: 10, backgroundColor: '#14141b' },
   metaCol: { marginLeft: 12, flex: 1 },
   title: { color: '#fff', fontSize: 18, fontWeight: '700' },
@@ -438,6 +680,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600'
   },
+  
+  // Rating Section
+  ratingContainer: { flexDirection: 'row', justifyContent: 'center', marginVertical: 16 },
+  starButton: { marginHorizontal: 4 },
+  ratingText: { color: '#ffd166', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  
+  // Comments Section
+  commentInputContainer: { marginVertical: 16 },
+  commentInput: { 
+    backgroundColor: '#1c1c23', 
+    borderRadius: 8, 
+    padding: 12, 
+    color: '#fff', 
+    fontSize: 14,
+    textAlignVertical: 'top',
+    marginBottom: 12
+  },
+  commentButton: { 
+    backgroundColor: '#e50914', 
+    paddingVertical: 12, 
+    paddingHorizontal: 24, 
+    borderRadius: 8, 
+    alignSelf: 'flex-end' 
+  },
+  commentButtonText: { color: '#fff', fontWeight: '600' },
+  loginPrompt: { color: '#666', fontSize: 14, textAlign: 'center', marginVertical: 16 },
+  commentsList: { marginTop: 16 },
+  commentItem: { 
+    backgroundColor: '#1c1c23', 
+    padding: 12, 
+    borderRadius: 8, 
+    marginBottom: 8 
+  },
+  commentAuthor: { color: '#ffd166', fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  commentContent: { color: '#fff', fontSize: 14, marginBottom: 4 },
+  commentDate: { color: '#666', fontSize: 12 },
+  noComments: { color: '#666', fontSize: 14, textAlign: 'center', marginVertical: 16 },
 });
 
 

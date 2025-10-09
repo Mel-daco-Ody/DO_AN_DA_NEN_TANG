@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, FlatList, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -84,20 +84,45 @@ const actorsData = [
 
 export default function ActorsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [filteredActors, setFilteredActors] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredActors = actorsData.filter(actor =>
-    actor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  useEffect(() => {
+    const loadActors = async () => {
+      try {
+        const { movieAppApi } = await import('../services/mock-api');
+        const response = await movieAppApi.getAllActors();
+        if (response.errorCode === 200) {
+          setFilteredActors(response.data);
+        } else {
+          // Fallback to mock data if API fails
+          setFilteredActors(actorsData);
+        }
+      } catch (error) {
+        console.error('Error loading actors:', error);
+        // Fallback to mock data
+        setFilteredActors(actorsData);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadActors();
+  }, []);
+
+  const filteredActorsList = filteredActors.filter(actor =>
+    actor.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     actor.career.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const renderActorItem = ({ item }: { item: any }) => (
     <Pressable 
       style={styles.actorCard}
-      onPress={() => router.push(`/actor/${item.id}` as any)}
+      onPress={() => router.push(`/actor/${item.personID}` as any)}
     >
-      <ImageWithPlaceholder source={{ uri: item.image }} style={styles.actorImage} showRedBorder={false} />
+      <ImageWithPlaceholder source={{ uri: item.avatar }} style={styles.actorImage} showRedBorder={false} />
       <View style={styles.actorInfo}>
-        <Text style={styles.actorName}>{item.name}</Text>
+        <Text style={styles.actorName}>{item.fullName}</Text>
         <Text style={styles.actorCareer}>{item.career}</Text>
         <Text style={styles.actorAge}>Age: {item.age}</Text>
         <Text style={styles.actorMovies}>{item.totalMovies} movies</Text>
@@ -109,6 +134,23 @@ export default function ActorsScreen() {
       </View>
     </Pressable>
   );
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#e50914" />
+          </Pressable>
+          <Text style={styles.headerTitle}>Actors</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading actors...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -135,9 +177,9 @@ export default function ActorsScreen() {
         <Text style={styles.sectionSubtitle}>Discover your favorite actors and actresses</Text>
         
         <FlatList
-          data={filteredActors}
+          data={filteredActorsList}
           renderItem={renderActorItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.personID.toString()}
           numColumns={2}
           scrollEnabled={false}
           contentContainerStyle={styles.actorsGrid}
@@ -187,4 +229,17 @@ const styles = StyleSheet.create({
   actorMovies: { color: '#c7c7c7', fontSize: 11, marginBottom: 8 },
   genresContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
   genreTag: { color: '#e50914', fontSize: 10, marginHorizontal: 2, marginBottom: 2 },
+  
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });

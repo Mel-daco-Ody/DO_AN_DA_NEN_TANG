@@ -3,10 +3,9 @@ import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, 
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useSubscription } from '../contexts/SubscriptionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useMovieBox } from '../contexts/MovieBoxContext';
+import FloatingSigninButton from './FloatingSigninButton';
 
 // Mock data for search - in real app this would come from API
 type SearchItem = {
@@ -20,27 +19,12 @@ type SearchItem = {
   studio: string;
 };
 
-const searchData: SearchItem[] = [
-  { id: '1', title: 'The Lost City', cover: 'https://flixgo.volkovdesign.com/main/img/covers/1.png', categories: ['Action', 'Thriller'], rating: '8.4', isSeries: false, year: '2022', studio: 'Paramount+' },
-  { id: '2', title: 'Undercurrents', cover: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', categories: ['Comedy'], rating: '7.1', isSeries: true, year: '2023', studio: 'Netflix' },
-  { id: '3', title: 'Redemption Road', cover: 'https://flixgo.volkovdesign.com/main/img/covers/3.png', categories: ['Romance', 'Drama', 'Music'], rating: '6.3', isSeries: false, year: '2021', studio: 'Amazon Prime' },
-  { id: '4', title: 'Tales from the Underworld', cover: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', categories: ['Comedy', 'Drama'], rating: '7.9', isSeries: true, year: '2024', studio: 'HBO Max' },
-  { id: '5', title: 'Voices from the Other Side', cover: 'https://flixgo.volkovdesign.com/main/img/covers/5.png', categories: ['Action', 'Thriller'], rating: '8.4', isSeries: false, year: '2023', studio: 'Disney+' },
-  { id: '6', title: 'The Unseen World', cover: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', categories: ['Comedy'], rating: '7.1', isSeries: true, year: '2022', studio: 'Apple TV+' },
-  { id: 'x1', title: 'Shadow of the Past', cover: 'https://flixgo.volkovdesign.com/main/img/covers/13.png', categories: ['Mystery', 'Thriller'], rating: '8.1', isSeries: false, year: '2024', studio: 'Netflix' },
-  { id: 'x2', title: 'Kingdom of Echoes', cover: 'https://flixgo.volkovdesign.com/main/img/covers/14.png', categories: ['Fantasy', 'Adventure'], rating: '7.8', isSeries: true, year: '2024', studio: 'HBO Max' },
-  { id: 'n1', title: 'Digital Dreams', cover: 'https://flixgo.volkovdesign.com/main/img/covers/15.png', categories: ['Action', 'Sci-Fi'], rating: '8.7', isSeries: false, year: '2024', studio: 'Netflix' },
-  { id: 'n2', title: 'Midnight Express', cover: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', categories: ['Thriller', 'Mystery'], rating: '7.9', isSeries: true, year: '2024', studio: 'Amazon Prime' },
-  { id: 'n3', title: 'Ocean Waves', cover: 'https://flixgo.volkovdesign.com/main/img/covers/17.png', categories: ['Romance', 'Drama'], rating: '8.2', isSeries: false, year: '2024', studio: 'Disney+' },
-  { id: 'n4', title: 'City Lights', cover: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', categories: ['Comedy', 'Romance'], rating: '7.5', isSeries: true, year: '2024', studio: 'Hulu' },
-  { id: 'n5', title: 'Space Odyssey', cover: 'https://flixgo.volkovdesign.com/main/img/covers/19.png', categories: ['Fantasy', 'Adventure'], rating: '8.9', isSeries: false, year: '2024', studio: 'Apple TV+' },
-];
+// Search data will be loaded from FilmZone backend
+const searchData: SearchItem[] = [];
 
 export default function Header() {
-  const { subscription } = useSubscription();
   const { authState } = useAuth();
   const { language, setLanguage, t } = useLanguage();
-  const { movieBox } = useMovieBox();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -48,18 +32,31 @@ export default function Header() {
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [burgerRotation] = useState(new Animated.Value(0));
   
-  // Search functionality
+  // Search functionality - FilmZone backend integration
   useEffect(() => {
-    if (searchQuery.trim().length > 0) {
-      const filtered = searchData.filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.categories.some(cat => cat.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        item.studio?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setSearchResults(filtered);
-    } else {
-      setSearchResults([]);
-    }
+    const searchMovies = async () => {
+      if (searchQuery.trim().length > 0) {
+        try {
+          const { movieAppApi } = await import('../services/mock-api');
+          const response = await movieAppApi.searchMovies(searchQuery.trim());
+          
+          if (response.errorCode === 200 && response.data) {
+            setSearchResults(response.data);
+          } else {
+            setSearchResults([]);
+          }
+        } catch (error) {
+          console.error('Search error:', error);
+          setSearchResults([]);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    };
+
+    // Debounce search to avoid too many API calls
+    const timeoutId = setTimeout(searchMovies, 300);
+    return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
   const handleSearchPress = () => {
@@ -75,7 +72,16 @@ export default function Header() {
   const handleSearchItemPress = async (item: SearchItem) => {
     try { await Haptics.selectionAsync(); } catch {}
     handleSearchClose();
-    const isSeries = typeof item.isSeries === 'boolean' ? item.isSeries : Math.random() < 0.5;
+    
+    // Add movie to watch progress when clicked
+    try {
+      const { movieAppApi } = await import('../services/mock-api');
+      await movieAppApi.addToWatchProgress(parseInt(item.id));
+    } catch (error) {
+      console.log('Error adding to watch progress:', error);
+    }
+    
+    const isSeries = typeof item.isSeries === 'boolean' ? item.isSeries : item.isSeries;
     const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
     const baseParams: any = { 
       id: item.id, 
@@ -84,12 +90,6 @@ export default function Header() {
       categories: item.categories.join(' • '), 
       rating: item.rating 
     };
-    if (item.id === 'x1') {
-      Object.assign(baseParams, { year: '2024', duration: '126 min', country: 'USA', cast: 'A. Johnson, M. Rivera', description: 'Một thám tử trở về quê nhà điều tra chuỗi vụ án liên quan đến quá khứ của chính mình.' });
-    }
-    if (item.id === 'x2') {
-      Object.assign(baseParams, { year: '2025', duration: 'Season 1', country: 'UK', cast: 'L. Bennett, K. Ito', description: 'Một vương quốc bị lãng quên vang vọng những bí ẩn cổ xưa, nhóm thám hiểm trẻ bắt đầu hành trình tìm lại nguồn gốc.', episodes: '1|2|3|4|5' });
-    }
     router.push({ pathname, params: baseParams });
   };
 
@@ -159,28 +159,18 @@ export default function Header() {
           }}
         >
           <Text style={styles.movieBoxIcon}>📦</Text>
-          {movieBox.length > 0 && (
-            <View style={styles.movieBoxBadge}>
-              <Text style={styles.movieBoxBadgeText}>{movieBox.length}</Text>
-            </View>
-          )}
         </Pressable>
 
-        {/* Sign in or Avatar based on auth status */}
-        {authState.isAuthenticated ? (
-          /* Avatar -> profile */
+        {/* Avatar based on auth status - Signin button is now floating */}
+        {authState.isAuthenticated && (
           <Pressable style={({ pressed }) => [styles.avatar, pressed && { transform: [{ scale: 0.96 }], opacity: 0.9 }]} onPress={goProfile}>
             {authState.user?.avatar ? (
               <Image source={{ uri: authState.user.avatar }} style={styles.avatarImage} />
             ) : (
               <Text style={styles.avatarText}>
-                {authState.user?.name?.charAt(0).toUpperCase() || 'U'}
+                {authState.user?.userName?.charAt(0).toUpperCase() || 'U'}
               </Text>
             )}
-          </Pressable>
-        ) : (
-          <Pressable style={({ pressed }) => [styles.signInBtn, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]} onPress={goSignIn}>
-            <Text style={styles.signInText}>{t('header.signin')}</Text>
           </Pressable>
         )}
       </View>
@@ -293,7 +283,7 @@ export default function Header() {
           {searchQuery.trim().length === 0 && (
             <View style={styles.searchSuggestionsContainer}>
               <Text style={styles.searchSuggestionsTitle}>{t('search.popular_searches')}</Text>
-              {['Action', 'Comedy', 'Drama', 'Thriller', 'Netflix', 'Disney+'].map((suggestion) => (
+              {['Action', 'Comedy', 'Drama', 'Thriller', 'Sci-Fi', 'Adventure'].map((suggestion) => (
                 <Pressable 
                   key={suggestion} 
                   style={({ pressed }) => [styles.searchSuggestion, pressed && { opacity: 0.8 }]} 
@@ -306,6 +296,9 @@ export default function Header() {
           )}
         </View>
       </Modal>
+      
+      {/* Floating Signin Button */}
+      <FloatingSigninButton />
     </View>
   );
 }

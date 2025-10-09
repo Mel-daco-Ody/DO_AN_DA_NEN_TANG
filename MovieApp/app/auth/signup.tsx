@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -10,8 +10,65 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agree, setAgree] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  
   const goSignIn = async () => { try { await Haptics.selectionAsync(); } catch {} router.push('/auth/signin'); };
   const goHome = async () => { try { await Haptics.selectionAsync(); } catch {} router.back(); };
+
+  const handleSignUp = async () => {
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!agree) {
+      Alert.alert('Error', 'Please agree to the Privacy Policy');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      const movieAppApi = (await import('../../services/api')).default;
+      const response = await movieAppApi.register(
+        name.trim(),
+        email.trim().toLowerCase(),
+        password,
+        name.trim().split(' ')[0], // firstName
+        name.trim().split(' ').slice(1).join(' ') || '', // lastName
+        'Other' // gender
+      );
+
+      if (response.errorCode === 200) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Success', 
+          'Account created successfully! Please check your email to verify your account.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.push('/auth/signin')
+            }
+          ]
+        );
+      } else {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Error', response.errorMessage || 'Registration failed');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      console.error('Signup error:', error);
+      Alert.alert('Error', 'An error occurred during registration');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.select({ ios: 'padding', android: undefined })}>
@@ -33,8 +90,18 @@ export default function SignUpScreen() {
             </Pressable>
           </View>
 
-          <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}>
-            <Text style={styles.primaryBtnText}>Sign up</Text>
+          <Pressable 
+            style={({ pressed }) => [
+              styles.primaryBtn, 
+              pressed && { opacity: 0.9 },
+              isLoading && { opacity: 0.6 }
+            ]}
+            onPress={handleSignUp}
+            disabled={isLoading}
+          >
+            <Text style={styles.primaryBtnText}>
+              {isLoading ? 'Creating Account...' : 'Sign up'}
+            </Text>
           </Pressable>
 
           <Pressable onPress={goSignIn}>

@@ -6,12 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import FlixGoLogo from '../../components/FlixGoLogo';
-import { useWatchHistory } from '../../contexts/WatchHistoryContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Slider from '@react-native-community/slider';
 
 export default function VideoPlayerScreen() {
   const { id, title, type, videoUrl, season, episode } = useLocalSearchParams();
-  const { updateProgress } = useWatchHistory();
+  const { authState } = useAuth();
   const videoRef = useRef<Video>(null);
   const [status, setStatus] = useState({});
   const [showControls, setShowControls] = useState(true);
@@ -150,7 +150,39 @@ export default function VideoPlayerScreen() {
         const progress = playbackStatus.positionMillis / playbackStatus.durationMillis;
         // Only update if progress is significant (more than 5%)
         if (progress > 0.05) {
-          updateProgress(id as string, parseInt(season as string), parseInt(episode as string), progress);
+          // Update episode watch progress with FilmZone backend
+          const updateProgress = async () => {
+            try {
+              const { movieAppApi } = await import('../../services/api');
+              const progressData = {
+                userID: authState.user?.userID || 0,
+                episodeID: parseInt(episode as string),
+                progressPercentage: Math.round(progress * 100),
+                watchTimeSeconds: Math.round(playbackStatus.positionMillis / 1000),
+                isCompleted: progress >= 0.9
+              };
+              await movieAppApi.addEpisodeWatchProgress(progressData);
+              
+              // Add to watch history
+              if (authState.user) {
+                const historyData = {
+                  movieID: parseInt(id as string),
+                  episodeID: progressData.episodeID,
+                  watchTimeSeconds: progressData.watchTimeSeconds,
+                  progressPercentage: progressData.progressPercentage
+                };
+                await movieAppApi.addToWatchHistory(authState.user.userID.toString(), historyData);
+                
+                // Increment films watched if completed
+                if (progressData.isCompleted) {
+                  await movieAppApi.incrementFilmsWatched(parseInt(id as string));
+                }
+              }
+            } catch (error) {
+              console.error('Error updating episode progress:', error);
+            }
+          };
+          updateProgress();
         }
       }
     }

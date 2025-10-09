@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import FlixGoLogo from '../../components/FlixGoLogo';
+import { movieAppApi } from '../../services/api';
 
 export default function ForgotScreen() {
   const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const goBack = async () => { try { await Haptics.selectionAsync(); } catch {} router.back(); };
 
   return (
@@ -20,8 +22,43 @@ export default function ForgotScreen() {
 
           <TextInput placeholder="Email" placeholderTextColor="#8e8e93" value={email} onChangeText={setEmail} style={styles.input} />
 
-          <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}>
-            <Text style={styles.primaryBtnText}>Recover</Text>
+          <Pressable 
+            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }, isLoading && styles.disabledButton]}
+            onPress={async () => {
+              if (!email.trim()) {
+                Alert.alert('Error', 'Please enter your email address');
+                return;
+              }
+
+              setIsLoading(true);
+              try {
+                await Haptics.selectionAsync();
+                
+                const response = await movieAppApi.startForgotPassword(email.trim());
+                
+                if (response.errorCode === 200) {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  Alert.alert(
+                    'Success', 
+                    'Password reset instructions have been sent to your email address.',
+                    [{ text: 'OK', onPress: () => router.back() }]
+                  );
+                } else {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                  Alert.alert('Error', response.errorMessage || 'Failed to send reset email');
+                }
+              } catch (error) {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                Alert.alert('Error', 'An error occurred while sending reset email');
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
+          >
+            <Text style={styles.primaryBtnText}>
+              {isLoading ? 'Sending...' : 'Recover'}
+            </Text>
           </Pressable>
 
           <Text style={styles.subText}>We will send a password to your Email</Text>
@@ -32,6 +69,9 @@ export default function ForgotScreen() {
 }
 
 const styles = StyleSheet.create({
+  disabledButton: {
+    opacity: 0.6,
+  },
   bg: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#2b2b31' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
   card: { width: '88%', backgroundColor: '#121219', borderRadius: 12, padding: 16 },

@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert, FlatList, Modal } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,9 +6,9 @@ import * as React from 'react';
 import ImageWithPlaceholder from '../../../components/ImageWithPlaceholder';
 import FlixGoLogo from '../../../components/FlixGoLogo';
 import WaveAnimation from '../../../components/WaveAnimation';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useLanguage } from '../../../contexts/LanguageContext';
 import * as Haptics from 'expo-haptics';
-import { useWatchHistory } from '../../../contexts/WatchHistoryContext';
-import { useMovieBox } from '../../../contexts/MovieBoxContext';
 
 function safe(value?: string | string[], fallback: string = 'N/A') {
   if (!value) return fallback;
@@ -16,141 +16,125 @@ function safe(value?: string | string[], fallback: string = 'N/A') {
   return value;
 }
 
-// Mock data for seasons and episodes
-const mockSeasonsData = {
-  '2': { // Undercurrents
-    seasons: [
-      {
-        id: 1,
-        name: 'Season 1',
-        episodes: [
-          { id: 1, title: 'The Beginning', duration: '45 min', description: 'Khởi đầu của câu chuyện với những nhân vật chính...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
-          { id: 2, title: 'The Discovery', duration: '42 min', description: 'Khám phá ra sự thật đằng sau những bí mật...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
-          { id: 3, title: 'The Conflict', duration: '48 min', description: 'Xung đột nảy sinh giữa các phe phái...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-          { id: 4, title: 'The Resolution', duration: '44 min', description: 'Giải quyết vấn đề và tìm ra hướng đi mới...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-          { id: 5, title: 'The Twist', duration: '46 min', description: 'Bước ngoặt bất ngờ thay đổi mọi thứ...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-          { id: 6, title: 'The Climax', duration: '50 min', description: 'Đỉnh điểm của câu chuyện với những cảnh hành động...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4' },
-          { id: 7, title: 'The Fallout', duration: '43 min', description: 'Hậu quả của sự kiện và những thay đổi...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4' },
-          { id: 8, title: 'The End', duration: '47 min', description: 'Kết thúc của mùa đầu với những câu hỏi mở...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/2.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4' },
-        ]
-      }
-    ]
-  },
-  '4': { // Tales from the Underworld
-    seasons: [
-      {
-        id: 1,
-        name: 'Season 1',
-        episodes: [
-          { id: 1, title: 'Welcome to Hell', duration: '50 min', description: 'Chào mừng đến địa ngục với những thử thách đầu tiên...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
-          { id: 2, title: 'The Deal', duration: '48 min', description: 'Thỏa thuận với quỷ dữ và những điều kiện khắc nghiệt...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
-          { id: 3, title: 'The Price', duration: '52 min', description: 'Cái giá phải trả cho những quyết định trong quá khứ...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-          { id: 4, title: 'The Escape', duration: '46 min', description: 'Cuộc trốn chạy khỏi những ràng buộc của địa ngục...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-          { id: 5, title: 'The Return', duration: '49 min', description: 'Sự trở lại với những kiến thức và sức mạnh mới...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-          { id: 6, title: 'The Truth', duration: '51 min', description: 'Sự thật được hé lộ về nguồn gốc và mục đích thực sự...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4' },
-        ]
-      },
-      {
-        id: 2,
-        name: 'Season 2',
-        episodes: [
-          { id: 1, title: 'New Beginnings', duration: '53 min', description: 'Khởi đầu mới với những thử thách và cơ hội...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4' },
-          { id: 2, title: 'The Alliance', duration: '47 min', description: 'Liên minh được thành lập giữa các thế lực...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4' },
-          { id: 3, title: 'The Betrayal', duration: '50 min', description: 'Sự phản bội từ những người tin tưởng nhất...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' },
-          { id: 4, title: 'The War', duration: '55 min', description: 'Cuộc chiến bắt đầu với những hậu quả khôn lường...', thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4' },
-          { id: 5, title: 'The Sacrifice', duration: '48 min', description: 'Hy sinh vì mục đích cao cả và những người thân yêu...', thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4' },
-          { id: 6, title: 'The Victory', duration: '52 min', description: 'Chiến thắng cuối cùng nhưng với cái giá đắt...', thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
-          { id: 7, title: 'The Aftermath', duration: '49 min', description: 'Hậu quả của chiến thắng và những thay đổi...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
-          { id: 8, title: 'The Future', duration: '51 min', description: 'Tương lai mới với những hy vọng và lo lắng...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-          { id: 9, title: 'The Reunion', duration: '46 min', description: 'Cuộc đoàn tụ với những người đã mất...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-          { id: 10, title: 'The Legacy', duration: '54 min', description: 'Di sản để lại cho thế hệ sau...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-          { id: 11, title: 'The Choice', duration: '47 min', description: 'Lựa chọn cuối cùng sẽ quyết định tương lai...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4' },
-          { id: 12, title: 'The End', duration: '56 min', description: 'Kết thúc của mùa 2 với những câu hỏi mở...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/4.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4' },
-        ]
-      }
-    ]
-  },
-  '6': { // The Unseen World
-    seasons: [
-      {
-        id: 1,
-        name: 'Season 1',
-        episodes: [
-          { id: 1, title: 'The Hidden Truth', duration: '42 min', description: 'Khám phá sự thật ẩn giấu về thế giới...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
-          { id: 2, title: 'The Revelation', duration: '45 min', description: 'Sự tiết lộ về những bí mật cổ xưa...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
-          { id: 3, title: 'The Awakening', duration: '48 min', description: 'Sự thức tỉnh của những sức mạnh tiềm ẩn...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-          { id: 4, title: 'The Journey', duration: '44 min', description: 'Cuộc hành trình đến những vùng đất mới...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-          { id: 5, title: 'The Confrontation', duration: '46 min', description: 'Cuộc đối đầu với những thế lực đen tối...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-          { id: 6, title: 'The Resolution', duration: '50 min', description: 'Giải pháp cuối cùng cho mọi vấn đề...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/6.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4' },
-        ]
-      }
-    ]
-  },
-  '7': { // Midnight Express
-    seasons: [
-      {
-        id: 1,
-        name: 'Season 1',
-        episodes: [
-          { id: 1, title: 'The Midnight Train', duration: '48 min', description: 'Chuyến tàu nửa đêm mang theo những bí mật...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4' },
-          { id: 2, title: 'The Mysterious Passenger', duration: '45 min', description: 'Hành khách bí ẩn với những mục đích không rõ...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4' },
-          { id: 3, title: 'The Disappearance', duration: '50 min', description: 'Sự biến mất của một hành khách quan trọng...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' },
-          { id: 4, title: 'The Investigation', duration: '47 min', description: 'Cuộc điều tra về những sự kiện bí ẩn...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4' },
-          { id: 5, title: 'The Truth Revealed', duration: '52 min', description: 'Sự thật được hé lộ về chuyến tàu định mệnh...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4' },
-          { id: 6, title: 'The Final Stop', duration: '49 min', description: 'Trạm dừng cuối cùng với những quyết định quan trọng...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
-          { id: 7, title: 'The Escape', duration: '46 min', description: 'Cuộc trốn chạy khỏi những ràng buộc...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
-          { id: 8, title: 'The New Beginning', duration: '51 min', description: 'Khởi đầu mới với những hy vọng...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/16.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-        ]
-      }
-    ]
-  },
-  '8': { // City Lights
-    seasons: [
-      {
-        id: 1,
-        name: 'Season 1',
-        episodes: [
-          { id: 1, title: 'City of Dreams', duration: '44 min', description: 'Thành phố của những giấc mơ và hy vọng...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-          { id: 2, title: 'Love in the City', duration: '42 min', description: 'Tình yêu trong thành phố không ngủ...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-          { id: 3, title: 'The Night Life', duration: '46 min', description: 'Cuộc sống về đêm với những bí mật...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4' },
-          { id: 4, title: 'The Morning After', duration: '43 min', description: 'Buổi sáng sau với những hậu quả...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4' },
-          { id: 5, title: 'The Reunion', duration: '45 min', description: 'Cuộc đoàn tụ với những người thân yêu...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4' },
-          { id: 6, title: 'The Farewell', duration: '48 min', description: 'Lời tạm biệt với thành phố yêu dấu...', thumbnail: 'https://flixgo.volkovdesign.com/main/img/covers/18.png', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' },
-        ]
-      }
-    ]
-  }
-};
+// Episodes will be loaded from FilmZone backend
+const mockSeasonsData: any = {};
 
 export default function SeriesDetailsScreen() {
   const { id, title, cover, categories, rating, year, duration, country, cast, description, episodes } = useLocalSearchParams();
-  const { getLatestWatched, addToHistory } = useWatchHistory();
-  const { addToMovieBox, removeFromMovieBox, isInMovieBox } = useMovieBox();
-  const [likes, setLikes] = React.useState(256);
-  const [unlikes, setUnlikes] = React.useState(12);
+  const { authState } = useAuth();
+  const { t } = useLanguage();
+  const [likes, setLikes] = React.useState(0);
+  const [unlikes, setUnlikes] = React.useState(0);
   const [liked, setLiked] = React.useState<boolean | null>(null);
   const [commentText, setCommentText] = React.useState('');
-  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([
-    { author: 'Khách', text: 'Series này nghe plot hấp dẫn đó!' },
-  ]);
+  const [comments, setComments] = React.useState<Array<{ author: string; text: string }>>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
   const [selectedSeason, setSelectedSeason] = React.useState(1);
+  const [seriesData, setSeriesData] = React.useState<any>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [latestWatched, setLatestWatched] = React.useState<any>(null);
+  const [isSaved, setIsSaved] = React.useState(false);
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [movieData, setMovieData] = React.useState<any>(null);
+  const [showSeasonDropdown, setShowSeasonDropdown] = React.useState(false);
   const width = Dimensions.get('window').width;
 
-  // Get series data
-  const seriesData = mockSeasonsData[safe(id) as keyof typeof mockSeasonsData];
-  const currentSeason = seriesData?.seasons.find(s => s.id === selectedSeason);
-  
-  // Get latest watched episode for this series
-  const latestWatched = getLatestWatched(safe(id));
+  // Load series data from FilmZone backend
+  React.useEffect(() => {
+    const loadSeriesData = async () => {
+      if (!id) return;
+      
+      setIsLoading(true);
+      try {
+        const { movieAppApi } = await import('../../../services/mock-api');
+        
+        // Load movie details from mockdata
+        const movieResponse = await movieAppApi.getMovieById(parseInt(id as string));
+        if (movieResponse.errorCode === 200) {
+          setMovieData(movieResponse.data);
+        }
+        
+        // Load episodes
+        const episodesResponse = await movieAppApi.getEpisodesByMovie(parseInt(id as string));
+        if (episodesResponse.errorCode === 200 && episodesResponse.data) {
+          setSeriesData(episodesResponse.data);
+          
+          // Auto-select first season if no season is selected
+          if (episodesResponse.data.seasons && episodesResponse.data.seasons.length > 0 && !selectedSeason) {
+            setSelectedSeason(episodesResponse.data.seasons[0].id);
+          }
+        }
+        
+        // Load comments
+        const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
+        if (commentsResponse.errorCode === 200) {
+          setComments(commentsResponse.data || []);
+        }
+        
+        // Load user data
+        if (authState.user) {
+          const [progressResponse, savedResponse] = await Promise.all([
+            movieAppApi.getEpisodeWatchProgress(),
+            movieAppApi.isMovieSaved(parseInt(id as string))
+          ]);
+          
+          if (progressResponse.errorCode === 200 && progressResponse.data) {
+            // Find latest watched episode for this series
+            const latest = progressResponse.data.find((progress: any) => 
+              progress.episode?.movieID === parseInt(id as string)
+            );
+            setLatestWatched(latest);
+          }
+          
+          if (savedResponse.errorCode === 200) {
+            setIsSaved(savedResponse.data?.isSaved || false);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading series data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSeriesData();
+  }, [id, authState.user]);
+
+  const currentSeason = seriesData?.seasons?.find((s: any) => s.id === selectedSeason);
+
+  const handleMovieBoxToggle = async () => {
+    try {
+      if (!authState.user) {
+        Alert.alert('Login Required', 'Please login to save series to your list');
+        return;
+      }
+      
+      const { movieAppApi } = await import('../../../services/mock-api');
+      
+      if (isSaved) {
+        // Remove from saved movies
+        await movieAppApi.removeFromSavedMovies(parseInt(id as string));
+        setIsSaved(false);
+        Alert.alert('Success', 'Series removed from your list');
+      } else {
+        // Add to saved movies
+        await movieAppApi.addToSavedMovies(parseInt(id as string));
+        setIsSaved(true);
+        Alert.alert('Success', 'Series added to your list');
+      }
+    } catch (error) {
+      console.log('Error toggling MovieBox:', error);
+      Alert.alert('Error', 'Failed to update your series list');
+    }
+  };
   
   // Determine which episode to play when clicking the main play button
   const getPlayEpisode = () => {
     if (latestWatched && seriesData) {
       // Find the latest watched episode in current data
-      const season = seriesData.seasons.find(s => s.id === latestWatched.season);
+      const season = seriesData.seasons.find((s: any) => s.id === latestWatched.season);
       if (season) {
-        const episode = season.episodes.find(e => e.id === latestWatched.episode);
+        const episode = season.episodes.find((e: any) => e.id === latestWatched.episode);
         if (episode) {
           return { season: latestWatched.season, episode };
         }
@@ -171,18 +155,18 @@ export default function SeriesDetailsScreen() {
   const handleMainPlayPress = () => {
     const playEpisode = getPlayEpisode();
     if (playEpisode) {
-      // Add to watch history
-      addToHistory({
-        seriesId: safe(id) as string,
-        seriesTitle: safe(title) as string,
-        season: playEpisode.season,
-        episode: playEpisode.episode.id,
-        episodeTitle: playEpisode.episode.title,
-        episodeDescription: playEpisode.episode.description,
-        thumbnail: playEpisode.episode.thumbnail,
-        videoUrl: playEpisode.episode.videoUrl as string,
-        duration: playEpisode.episode.duration,
-      });
+      // TODO: Add to watch history with backend
+      // addToHistory({
+      //   seriesId: safe(id) as string,
+      //   seriesTitle: safe(title) as string,
+      //   season: playEpisode.season,
+      //   episode: playEpisode.episode.id,
+      //   episodeTitle: playEpisode.episode.title,
+      //   episodeDescription: playEpisode.episode.description,
+      //   thumbnail: playEpisode.episode.thumbnail,
+      //   videoUrl: playEpisode.episode.videoUrl as string,
+      //   duration: playEpisode.episode.duration,
+      // });
 
       // Navigate to player
       router.push({ 
@@ -199,28 +183,6 @@ export default function SeriesDetailsScreen() {
     }
   };
 
-  const handleMovieBoxToggle = async () => {
-    try {
-      if (isInMovieBox(safe(id))) {
-        removeFromMovieBox(safe(id));
-      } else {
-        addToMovieBox({
-          id: safe(id),
-          title: safe(title),
-          cover: safe(cover),
-          categories: safe(categories).split(' • '),
-          rating: safe(rating),
-          isSeries: true,
-          year: safe(year),
-          studio: 'N/A',
-          episodes: safe(episodes),
-          season: 'Season 1',
-        });
-      }
-    } catch (error) {
-      console.log('Error toggling MovieBox:', error);
-    }
-  };
 
   return (
     <ScrollView style={styles.container} contentInsetAdjustmentBehavior="automatic">
@@ -234,9 +196,9 @@ export default function SeriesDetailsScreen() {
         </View>
         <Pressable style={styles.bookmarkBtn} onPress={handleMovieBoxToggle}>
           <Ionicons 
-            name={isInMovieBox(safe(id)) ? "bookmark" : "bookmark-outline"} 
+            name={isSaved ? "bookmark" : "bookmark-outline"} 
             size={24} 
-            color={isInMovieBox(safe(id)) ? "#e50914" : "#fff"} 
+            color={isSaved ? "#e50914" : "#fff"} 
           />
         </Pressable>
       </View>
@@ -249,8 +211,10 @@ export default function SeriesDetailsScreen() {
       >
         <View style={styles.playerGradient} />
         <View style={styles.playerContent}>
-          <Text style={styles.playerTitle}>{safe(title)}</Text>
-          <Text style={styles.playerSubtitle}>{safe(categories)} • {safe(year)}</Text>
+          <Text style={styles.playerTitle}>{movieData?.title || safe(title)}</Text>
+          <Text style={styles.playerSubtitle}>
+            {movieData?.tags?.map((tag: any) => tag.tagName).join(' • ') || safe(categories)} • {movieData?.year || safe(year)}
+          </Text>
           <View style={styles.playButtonContainer}>
             <WaveAnimation isActive={!isPlayPressed} color="#e50914" size={60} />
             <Pressable 
@@ -271,45 +235,83 @@ export default function SeriesDetailsScreen() {
 
       {/* Introduction Section - No Container */}
       <View style={styles.introSection}>
-        <Text style={styles.sectionTitle}>Giới thiệu</Text>
-        <Text style={styles.kv}>Năm phát hành: <Text style={styles.kvVal}>{safe(year)}</Text></Text>
-        <Text style={styles.kv}>Mùa: <Text style={styles.kvVal}>{seriesData ? `${seriesData.seasons.length} mùa` : safe(duration)}</Text></Text>
-        <Text style={styles.kv}>Quốc gia: <Text style={styles.kvVal}>{safe(country)}</Text></Text>
-        <Text style={styles.kv}>Thể loại: <Text style={styles.kvVal}>Drama, Sci-Fi</Text></Text>
+        <Text style={styles.sectionTitle}>{t('details.introduction')}</Text>
+        <Text style={styles.kv}>{t('details.release_year')}: <Text style={styles.kvVal}>{movieData?.year || safe(year)}</Text></Text>
+        <Text style={styles.kv}>{t('details.seasons')}: <Text style={styles.kvVal}>
+          {(() => {
+            const seasonsCount = movieData?.totalSeasons || seriesData?.seasons?.length || 0;
+            return seasonsCount > 0 ? `${seasonsCount} ${t('details.seasons').toLowerCase()}` : safe(duration);
+          })()}
+        </Text></Text>
+        <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{movieData?.region?.regionName || safe(country)}</Text></Text>
+        <Text style={styles.kv}>{t('details.genre')}: <Text style={styles.kvVal}>{movieData?.tags?.map((tag: any) => tag.tagName).join(', ') || 'Drama, Sci-Fi'}</Text></Text>
         <View style={styles.categoryLinks}>
-          <Pressable onPress={() => router.push('/category/Drama' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.categoryLinkText}>Drama</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/category/Sci-Fi' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.categoryLinkText}>Sci-Fi</Text>
-          </Pressable>
+          {movieData?.tags?.map((tag: any) => (
+            <Pressable key={tag.tagID} onPress={() => router.push(`/category/${tag.tagName}` as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+              <Text style={styles.categoryLinkText}>{tag.tagName}</Text>
+            </Pressable>
+          )) || (
+            <>
+              <Pressable onPress={() => router.push('/category/Drama' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.categoryLinkText}>Drama</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push('/category/Sci-Fi' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.categoryLinkText}>Sci-Fi</Text>
+              </Pressable>
+            </>
+          )}
         </View>
-        <Text style={styles.kv}>Diễn viên: <Text style={styles.kvVal}>Michelle Rodriguez, Vin Diesel, Paul Walker</Text></Text>
+        <Text style={styles.kv}>{t('details.actors')}: <Text style={styles.kvVal}>{movieData?.actors?.map((actor: any) => actor.fullName).join(', ') || 'Michelle Rodriguez, Vin Diesel, Paul Walker'}</Text></Text>
         <View style={styles.actorLinks}>
-          <Pressable onPress={() => router.push('/actor/1' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Michelle Rodriguez</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/actor/2' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Vin Diesel</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/actor/3' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-            <Text style={styles.actorLinkText}>Paul Walker</Text>
-          </Pressable>
+          {movieData?.actors?.map((actor: any) => (
+            <Pressable key={actor.personID} onPress={() => router.push(`/actor/${actor.personID}` as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+              <Text style={styles.actorLinkText}>{actor.fullName}</Text>
+            </Pressable>
+          )) || (
+            <>
+              <Pressable onPress={() => router.push('/actor/1' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.actorLinkText}>Michelle Rodriguez</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push('/actor/2' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.actorLinkText}>Vin Diesel</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push('/actor/3' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+                <Text style={styles.actorLinkText}>Paul Walker</Text>
+              </Pressable>
+            </>
+          )}
         </View>
-        <Text style={[styles.sectionText, { marginTop: 8 }]}>{safe(description, 'N/A')}</Text>
+        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || safe(description, 'N/A')}</Text>
       </View>
 
       {/* Advertisement Banner - Full Width */}
       <View style={styles.adBanner}>
-        <View style={styles.adPlaceholder}>
-          <Text style={styles.adPlaceholderText}>Banner quảng cáo</Text>
-        </View>
+        <Pressable 
+          style={({ pressed }) => [styles.adContainer, pressed && { opacity: 0.9 }]}
+          onPress={() => {
+            // Handle ad click
+            console.log('Ad clicked');
+          }}
+        >
+          <ImageWithPlaceholder 
+            source={{ uri: 'https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=800&h=200&fit=crop' }}
+            style={styles.adImage}
+            showRedBorder={false}
+          />
+          <View style={styles.adOverlay}>
+            <Text style={styles.adTitle}>🎬 Netflix Originals</Text>
+            <Text style={styles.adSubtitle}>Xem phim mới nhất trên Netflix</Text>
+            <View style={styles.adBadge}>
+              <Text style={styles.adBadgeText}>QUẢNG CÁO</Text>
+            </View>
+          </View>
+        </Pressable>
       </View>
 
 
       {/* Like / Unlike */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Đánh giá</Text>
+        <Text style={styles.sectionTitle}>{t('details.rating')}</Text>
         <View style={styles.likeRow}>
           <Pressable
             onPress={() => {
@@ -334,42 +336,103 @@ export default function SeriesDetailsScreen() {
 
       {/* Episode list */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Danh sách tập</Text>
+        <Text style={styles.sectionTitle}>{t('details.episodes')}</Text>
         
-        {/* Season Selector */}
-        {seriesData && seriesData.seasons.length > 1 && (
+        {/* Season Selector - Dropdown */}
+        {seriesData && seriesData.seasons && seriesData.seasons.length > 0 && (
           <View style={styles.seasonSelector}>
-            <Text style={styles.seasonLabel}>Chọn mùa:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.seasonScroll}>
-              {seriesData.seasons.map((season) => (
+            <Text style={styles.seasonLabel}>{t('details.seasons')}:</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.seasonDropdown,
+                pressed && { opacity: 0.8 }
+              ]}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setShowSeasonDropdown(!showSeasonDropdown);
+              }}
+            >
+              <Text style={styles.seasonDropdownText}>
+                {seriesData.seasons.find((s: any) => s.id === selectedSeason)?.name || `Season ${selectedSeason}`}
+              </Text>
+              <Ionicons 
+                name={showSeasonDropdown ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color="#e50914" 
+              />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Season Dropdown Modal */}
+        <Modal
+          visible={showSeasonDropdown}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowSeasonDropdown(false)}
+        >
+          <Pressable 
+            style={styles.modalOverlay}
+            onPress={() => setShowSeasonDropdown(false)}
+          >
+            <View style={styles.seasonDropdownList}>
+              {seriesData?.seasons?.map((season: any) => (
                 <Pressable
                   key={season.id}
                   style={({ pressed }) => [
-                    styles.seasonButton,
-                    selectedSeason === season.id && styles.seasonButtonActive,
+                    styles.seasonDropdownItem,
+                    selectedSeason === season.id && styles.seasonDropdownItemActive,
                     pressed && { opacity: 0.8 }
                   ]}
                   onPress={() => {
                     Haptics.selectionAsync();
                     setSelectedSeason(season.id);
+                    setShowSeasonDropdown(false);
                   }}
                 >
                   <Text style={[
-                    styles.seasonButtonText,
-                    selectedSeason === season.id && styles.seasonButtonTextActive
+                    styles.seasonDropdownItemText,
+                    selectedSeason === season.id && styles.seasonDropdownItemTextActive
                   ]}>
                     {season.name}
                   </Text>
+                  {selectedSeason === season.id && (
+                    <Ionicons name="checkmark" size={20} color="#e50914" />
+                  )}
                 </Pressable>
               ))}
-            </ScrollView>
-          </View>
-        )}
+            </View>
+          </Pressable>
+        </Modal>
 
         {/* Episodes List */}
-        {currentSeason ? (
-          <View style={styles.episodesList}>
-            {currentSeason.episodes.map((episode, index) => {
+        {(() => {
+          // Get episodes from selected season
+          let episodesToRender = [];
+          if (seriesData && seriesData.seasons && seriesData.seasons.length > 0) {
+            const currentSeason = seriesData.seasons.find((s: any) => s.id === selectedSeason);
+            if (currentSeason && currentSeason.episodes && currentSeason.episodes.length > 0) {
+              episodesToRender = currentSeason.episodes;
+            } else {
+              // Fallback: get episodes from first season
+              const firstSeason = seriesData.seasons[0];
+              if (firstSeason && firstSeason.episodes && firstSeason.episodes.length > 0) {
+                episodesToRender = firstSeason.episodes;
+              }
+            }
+          }
+          
+          if (episodesToRender.length > 0) {
+            const displayEpisodes = isExpanded ? episodesToRender : episodesToRender.slice(0, 3);
+            
+            return (
+              <View style={styles.episodesContainer}>
+                <FlatList
+                  data={displayEpisodes}
+                  keyExtractor={(item) => item.id.toString()}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({ item: episode, index }) => {
               const isLatestWatched = latestWatched && 
                 latestWatched.season === selectedSeason && 
                 latestWatched.episode === episode.id;
@@ -385,24 +448,24 @@ export default function SeriesDetailsScreen() {
                   onPress={() => {
                     Haptics.selectionAsync();
                     
-                    // Add to watch history
-                    addToHistory({
-                      seriesId: safe(id) as string,
-                      seriesTitle: safe(title) as string,
-                      season: selectedSeason,
-                      episode: episode.id,
-                      episodeTitle: episode.title,
-                      episodeDescription: episode.description,
-                      thumbnail: episode.thumbnail,
-                      videoUrl: episode.videoUrl as string,
-                      duration: episode.duration,
-                    });
+                    // TODO: Add to watch history with backend
+                    // addToHistory({
+                    //   seriesId: safe(id) as string,
+                    //   seriesTitle: safe(title) as string,
+                    //   season: selectedSeason,
+                    //   episode: episode.id,
+                    //   episodeTitle: episode.title,
+                    //   episodeDescription: episode.description,
+                    //   thumbnail: episode.thumbnail,
+                    //   videoUrl: episode.videoUrl as string,
+                    //   duration: episode.duration,
+                    // });
                     
                     router.push({ 
                       pathname: '/player/[id]', 
                       params: { 
                         id: safe(id), 
-                        title: `${safe(title)} - ${episode.title}`, 
+                        title: `${movieData?.title || safe(title)} - ${episode.title}`, 
                         type: 'series',
                         season: selectedSeason.toString(),
                         episode: episode.id.toString(),
@@ -422,13 +485,13 @@ export default function SeriesDetailsScreen() {
                     </View>
                     {isLatestWatched && (
                       <View style={styles.episodeLatestBadge}>
-                        <Text style={styles.episodeLatestText}>Tiếp tục</Text>
+                            <Text style={styles.episodeLatestText}>{t('details.continue_watching')}</Text>
                       </View>
                     )}
                   </View>
                   <View style={styles.episodeContent}>
                     <View style={styles.episodeHeader}>
-                      <Text style={styles.episodeNumber}>Tập {episode.id}</Text>
+                      <Text style={styles.episodeNumber}>{t('details.episode')} {episode.episodeNumber}</Text>
                       <Text style={styles.episodeDuration}>{episode.duration}</Text>
                     </View>
                     <Text style={styles.episodeTitle}>{episode.title}</Text>
@@ -441,27 +504,55 @@ export default function SeriesDetailsScreen() {
                   </View>
                 </Pressable>
               );
-            })}
-          </View>
-        ) : (
-          <View style={styles.noEpisodesContainer}>
-            <Ionicons name="tv-outline" size={48} color="#8e8e93" />
-            <Text style={styles.noEpisodesText}>Chưa có thông tin tập</Text>
-            <Text style={styles.noEpisodesSubtext}>Dữ liệu sẽ được cập nhật sớm</Text>
-          </View>
-        )}
+                  }}
+                />
+                
+                {/* Expand/Collapse Button */}
+                {episodesToRender.length > 3 && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.expandButton,
+                      pressed && { opacity: 0.8 }
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setIsExpanded(!isExpanded);
+                    }}
+                  >
+                    <Text style={styles.expandButtonText}>
+                      {isExpanded ? 'Thu gọn' : `Xem thêm ${episodesToRender.length - 3} ${t('details.episode').toLowerCase()}`}
+                    </Text>
+                    <Ionicons 
+                      name={isExpanded ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color="#e50914" 
+                    />
+                  </Pressable>
+                )}
+              </View>
+            );
+          } else {
+            return (
+              <View style={styles.noEpisodesContainer}>
+                <Ionicons name="tv-outline" size={48} color="#8e8e93" />
+                <Text style={styles.noEpisodesText}>{t('details.no_episodes')}</Text>
+                <Text style={styles.noEpisodesSubtext}>{t('details.episodes_coming_soon')}</Text>
+              </View>
+            );
+          }
+        })()}
       </View>
 
       {/* Comments */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Bình luận</Text>
+        <Text style={styles.sectionTitle}>{t('details.comments')}</Text>
         <View style={styles.commentForm}>
           <View style={styles.commentAvatar}>
             <Text style={styles.commentAvatarText}>U</Text>
           </View>
           <View style={styles.commentInputContainer}>
             <TextInput
-              placeholder="Viết bình luận của bạn..."
+              placeholder={t('details.write_comment')}
               placeholderTextColor="#8e8e93"
               value={commentText}
               onChangeText={setCommentText}
@@ -477,7 +568,7 @@ export default function SeriesDetailsScreen() {
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
-              <Text style={styles.commentBtnText}>Gửi</Text>
+              <Text style={styles.commentBtnText}>{t('details.post_comment')}</Text>
             </Pressable>
           </View>
         </View>
@@ -566,9 +657,53 @@ const styles = StyleSheet.create({
   introSection: { paddingHorizontal: 16, paddingVertical: 20 },
   
   // Advertisement Banner - Full Width
-  adBanner: { paddingVertical: 16 },
-  adPlaceholder: { height: 80, backgroundColor: '#2b2b31', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  adPlaceholderText: { color: '#8e8e93', fontSize: 14 },
+  adBanner: { paddingVertical: 16, paddingHorizontal: 16 },
+  adContainer: { 
+    height: 120, 
+    borderRadius: 12, 
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#2b2b31'
+  },
+  adImage: { 
+    width: '100%', 
+    height: '100%' 
+  },
+  adOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    padding: 16
+  },
+  adTitle: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '700', 
+    marginBottom: 4,
+    textAlign: 'center'
+  },
+  adSubtitle: { 
+    color: '#c7c7cc', 
+    fontSize: 14, 
+    marginBottom: 8,
+    textAlign: 'center'
+  },
+  adBadge: { 
+    backgroundColor: '#e50914', 
+    paddingHorizontal: 8, 
+    paddingVertical: 4, 
+    borderRadius: 4 
+  },
+  adBadgeText: { 
+    color: '#fff', 
+    fontSize: 10, 
+    fontWeight: '700' 
+  },
   poster: { width: 110, height: 160, borderRadius: 10, backgroundColor: '#14141b' },
   metaCol: { marginLeft: 12, flex: 1 },
   title: { color: '#fff', fontSize: 18, fontWeight: '700' },
@@ -586,34 +721,85 @@ const styles = StyleSheet.create({
   likeBtnActive: { backgroundColor: '#e50914' },
   likeText: { color: '#c7c7cc', fontWeight: '700' },
   likeTextActive: { color: '#fff' },
-  // Season Selector
-  seasonSelector: { marginBottom: 16 },
-  seasonLabel: { color: '#c7c7cc', fontSize: 14, marginBottom: 8, fontWeight: '600' },
-  seasonScroll: { marginHorizontal: -4 },
-  seasonButton: { 
-    backgroundColor: '#1c1c23', 
-    paddingVertical: 8, 
-    paddingHorizontal: 16, 
-    borderRadius: 20, 
-    marginHorizontal: 4,
+  // Season Selector - Dropdown
+  seasonSelector: { 
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  seasonLabel: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '600',
+    flex: 1
+  },
+  seasonDropdown: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minWidth: 120,
+    flex: 2,
+    marginLeft: 12
   },
-  seasonButtonActive: { 
-    backgroundColor: '#e50914', 
-    borderColor: '#e50914' 
+  seasonDropdownText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1
   },
-  seasonButtonText: { 
-    color: '#c7c7cc', 
-    fontSize: 14, 
-    fontWeight: '600' 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  seasonButtonTextActive: { 
-    color: '#fff' 
+  seasonDropdownList: {
+    backgroundColor: '#1a1a1f',
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 200,
+    maxHeight: 300,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8
+  },
+  seasonDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)'
+  },
+  seasonDropdownItemActive: {
+    backgroundColor: 'rgba(229,9,20,0.1)'
+  },
+  seasonDropdownItemText: {
+    color: '#c7c7cc',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1
+  },
+  seasonDropdownItemTextActive: {
+    color: '#e50914',
+    fontWeight: '600'
   },
 
   // Episodes List
   episodesList: { marginTop: 8 },
+  episodesContainer: { marginTop: 8 },
   episodeItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -698,6 +884,25 @@ const styles = StyleSheet.create({
   },
   episodeAction: { 
     marginLeft: 8 
+  },
+  
+  expandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e50914',
+    marginTop: 8
+  },
+  expandButtonText: {
+    color: '#e50914',
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 4
   },
 
   // No Episodes
