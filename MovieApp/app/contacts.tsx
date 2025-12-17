@@ -48,7 +48,7 @@ export default function ContactsScreen() {
           <View style={styles.contactCard}>
             <Ionicons name="mail" size={24} color="#e50914" />
             <Text style={styles.contactTitle}>Email</Text>
-            <Text style={styles.contactText}>support@flixgo.com</Text>
+            <Text style={styles.contactText}>meldacoody@gmail.com</Text>
             <Text style={styles.contactSubtext}>We'll respond within 24 hours</Text>
           </View>
 

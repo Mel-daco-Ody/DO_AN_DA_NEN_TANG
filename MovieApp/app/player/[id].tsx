@@ -8,16 +8,24 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import Slider from '@react-native-community/slider';
+import { filmzoneApi } from '../../services/filmzone-api';
 
 export default function VideoPlayerScreen() {
   const { id, title, type, videoUrl, season, episode } = useLocalSearchParams();
   const { authState } = useAuth();
   const videoRef = useRef<Video>(null);
+  const lastProgressUpdateRef = useRef<number>(0);
   const [status, setStatus] = useState({});
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [videoUri, setVideoUri] = useState<string>('');
+  const [isLoadingVideo, setIsLoadingVideo] = useState(true);
+  const [subtitles, setSubtitles] = useState<any[]>([]);
+  const [currentSourceId, setCurrentSourceId] = useState<number | undefined>(undefined);
+  const [currentEpisodeSourceId, setCurrentEpisodeSourceId] = useState<number | undefined>(undefined);
+  const [videoError, setVideoError] = useState<boolean>(false);
   const [waveAnimation1] = useState(new Animated.Value(0));
   const [waveAnimation2] = useState(new Animated.Value(0));
   const [waveAnimation3] = useState(new Animated.Value(0));
@@ -45,25 +53,126 @@ export default function VideoPlayerScreen() {
     { id: 'es', name: 'Español', code: 'es' },
   ];
 
-  // Use videoUrl from params, fallback to demo video
-  const videoUri = videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-
-  // Handle screen orientation
+  // Load video source from API
   useEffect(() => {
-    const lockToLandscape = async () => {
+    const loadVideoSource = async () => {
       try {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-        setIsLandscape(true);
+        setIsLoadingVideo(true);
+        setVideoError(false);
+        
+        console.log('VideoPlayerScreen: loadVideoSource params', { id, type, episode, videoUrl });
+
+        if (type === 'series' && episode) {
+          // Load episode source
+          const episodeId = parseInt(episode as string);
+          const sourcesResponse = await filmzoneApi.getEpisodeSourcesByEpisodeId(episodeId);
+          
+          if (sourcesResponse.errorCode >= 200 && sourcesResponse.errorCode < 300 && sourcesResponse.data && sourcesResponse.data.length > 0) {
+            // Get the first active source (or VIP source if user is VIP)
+            const activeSources = sourcesResponse.data.filter((s: any) => s.isActive);
+            const userIsVip = authState.user?.subscription?.plan && authState.user.subscription.plan !== 'starter';
+            
+            let selectedSource = activeSources.find((s: any) => !s.isVipOnly) || activeSources[0];
+            if (userIsVip) {
+              selectedSource = activeSources.find((s: any) => s.isVipOnly) || activeSources[0] || selectedSource;
+            }
+            
+            if (selectedSource?.sourceUrl) {
+              setVideoUri(selectedSource.sourceUrl);
+              setCurrentEpisodeSourceId(selectedSource.episodeSourceID);
+            } else {
+              // No valid source found - show 404 error
+              setVideoError(true);
+              setVideoUri('');
+            }
+          } else {
+            // No sources found - show 404 error
+            setVideoError(true);
+            setVideoUri('');
+          }
+        } else {
+          // Load movie sources via public endpoint by movieId
+          const movieId = parseInt(id as string);
+          const sourcesResponse = await filmzoneApi.getMovieSourcesByMovieId(movieId);
+          console.log('VideoPlayerScreen: movie sources (public) response', { movieId, response: sourcesResponse });
+
+          if (sourcesResponse.errorCode >= 200 && sourcesResponse.errorCode < 300 && sourcesResponse.data) {
+            const sourcesData = Array.isArray(sourcesResponse.data)
+              ? sourcesResponse.data
+              : [sourcesResponse.data];
+
+            if (sourcesData.length > 0) {
+              const activeSources = sourcesData.filter((s: any) => s.isActive !== false);
+              const userIsVip = authState.user?.subscription?.plan && authState.user.subscription.plan !== 'starter';
+
+              let selectedSource = activeSources.find((s: any) => !s.isVipOnly) || activeSources[0];
+              if (userIsVip) {
+                selectedSource = activeSources.find((s: any) => s.isVipOnly) || activeSources[0] || selectedSource;
+              }
+
+              if (selectedSource?.sourceUrl) {
+                setVideoUri(selectedSource.sourceUrl);
+                setCurrentSourceId((selectedSource as any).sourceID || (selectedSource as any).movieSourceID);
+              } else {
+                console.log('VideoPlayerScreen: no valid sourceUrl in selectedSource', selectedSource);
+                setVideoError(true);
+                setVideoUri('');
+              }
+            } else {
+              console.log('VideoPlayerScreen: no movie sources data after parsing (public)', sourcesData);
+              setVideoError(true);
+              setVideoUri('');
+            }
+          } else {
+            console.log('VideoPlayerScreen: movie source (public) API not ok', sourcesResponse);
+            setVideoError(true);
+            setVideoUri('');
+          }
+        }
       } catch (error) {
-        console.log('Error locking orientation:', error);
+        console.error('VideoPlayerScreen: Error loading video source:', error);
+        // Error loading - show 404 error
+        setVideoError(true);
+        setVideoUri('');
+      } finally {
+        setIsLoadingVideo(false);
+      }
+    };
+    
+    loadVideoSource();
+  }, [id, type, episode, videoUrl, authState.user]);
+
+  // Handle screen orientation - Allow both portrait and landscape
+  useEffect(() => {
+    const unlockOrientation = async () => {
+      try {
+        // Unlock orientation to allow both portrait and landscape
+        await ScreenOrientation.unlockAsync();
+      } catch (error) {
+        console.log('Error unlocking orientation:', error);
       }
     };
 
-    lockToLandscape();
+    unlockOrientation();
 
-    // Cleanup function to unlock orientation when component unmounts
+    // Listen for dimension changes to detect orientation
+    const updateOrientation = () => {
+      const { width, height } = Dimensions.get('window');
+      setIsLandscape(width > height);
+    };
+
+    // Set initial orientation
+    updateOrientation();
+
+    // Listen for dimension changes
+    const subscription = Dimensions.addEventListener('change', updateOrientation);
+
+    // Cleanup function
     return () => {
-      ScreenOrientation.unlockAsync();
+      subscription?.remove();
+      ScreenOrientation.unlockAsync().catch(err => {
+        console.log('Error unlocking orientation:', err);
+      });
     };
   }, []);
 
@@ -139,50 +248,50 @@ export default function VideoPlayerScreen() {
         setIsPlaying(playbackStatus.isPlaying);
       }
       // Keep local mute state in sync with player
-      // @ts-expect-error - isMuted exists when isLoaded is true
-      if (typeof playbackStatus.isMuted === 'boolean' && playbackStatus.isMuted !== isMuted) {
-        // @ts-expect-error - isMuted exists when isLoaded is true
+      if (playbackStatus.isLoaded && typeof playbackStatus.isMuted === 'boolean' && playbackStatus.isMuted !== isMuted) {
         setIsMuted(playbackStatus.isMuted);
       }
       
       // Update progress in watch history every 5 seconds
-      if (type === 'series' && season && episode && playbackStatus.positionMillis && playbackStatus.durationMillis) {
+      if (playbackStatus.positionMillis && playbackStatus.durationMillis && authState.user?.userID) {
         const progress = playbackStatus.positionMillis / playbackStatus.durationMillis;
+        const positionSeconds = Math.round(playbackStatus.positionMillis / 1000);
+        const durationSeconds = Math.round(playbackStatus.durationMillis / 1000);
+        
         // Only update if progress is significant (more than 5%)
         if (progress > 0.05) {
-          // Update episode watch progress with FilmZone backend
           const updateProgress = async () => {
             try {
-              const { movieAppApi } = await import('../../services/api');
-              const progressData = {
-                userID: authState.user?.userID || 0,
-                episodeID: parseInt(episode as string),
-                progressPercentage: Math.round(progress * 100),
-                watchTimeSeconds: Math.round(playbackStatus.positionMillis / 1000),
-                isCompleted: progress >= 0.9
-              };
-              await movieAppApi.addEpisodeWatchProgress(progressData);
-              
-              // Add to watch history
-              if (authState.user) {
-                const historyData = {
-                  movieID: parseInt(id as string),
-                  episodeID: progressData.episodeID,
-                  watchTimeSeconds: progressData.watchTimeSeconds,
-                  progressPercentage: progressData.progressPercentage
-                };
-                await movieAppApi.addToWatchHistory(authState.user.userID.toString(), historyData);
-                
-                // Increment films watched if completed
-                if (progressData.isCompleted) {
-                  await movieAppApi.incrementFilmsWatched(parseInt(id as string));
-                }
+              if (type === 'series' && season && episode) {
+                // Update episode watch progress for series
+                const episodeId = parseInt(episode as string);
+                await filmzoneApi.updateEpisodeWatchProgressByEpisode(
+                  episodeId,
+                  positionSeconds,
+                  durationSeconds,
+                  currentEpisodeSourceId
+                );
+              } else {
+                // Update movie watch progress
+                const movieId = parseInt(id as string);
+                await filmzoneApi.updateWatchProgressByMovie(
+                  movieId,
+                  positionSeconds,
+                  durationSeconds,
+                  currentSourceId
+                );
               }
             } catch (error) {
-              console.error('Error updating episode progress:', error);
+              console.error('Error updating watch progress:', error);
             }
           };
-          updateProgress();
+          
+          // Debounce: only update every 5 seconds
+          const now = Date.now();
+          if (!lastProgressUpdateRef.current || now - lastProgressUpdateRef.current > 5000) {
+            lastProgressUpdateRef.current = now;
+            updateProgress();
+          }
         }
       }
     }
@@ -298,20 +407,56 @@ export default function VideoPlayerScreen() {
     <View style={styles.container}>
       <StatusBar hidden />
       
+      {/* Loading Indicator */}
+      {isLoadingVideo && (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Đang tải video...</Text>
+        </View>
+      )}
+      
+      {/* Error 404 */}
+      {!isLoadingVideo && videoError && (
+        <View style={styles.errorContainer}>
+          {/* Top Buttons - Left Side */}
+          <View style={styles.topButtonsContainer}>
+            <Pressable style={styles.backButtonError} onPress={goBack}>
+              <Ionicons name="arrow-back" size={24} color="#e50914" />
+            </Pressable>
+            
+            <Pressable style={styles.reportButtonError} onPress={() => {
+              // TODO: Implement report error functionality
+              console.log('Report error pressed');
+            }}>
+              <Ionicons name="flag-outline" size={24} color="#e50914" />
+            </Pressable>
+          </View>
+          
+          {/* Error Content - Centered */}
+          <View style={styles.errorContent}>
+            <Ionicons name="alert-circle-outline" size={64} color="#e50914" />
+            <Text style={styles.errorTitle}>404</Text>
+            <Text style={styles.errorMessage}>Không tìm thấy video</Text>
+            <Text style={styles.errorSubtext}>Video này không có sẵn hoặc đã bị xóa</Text>
+          </View>
+        </View>
+      )}
+      
       {/* Video Player */}
-      <Video
-        ref={videoRef}
-        style={styles.video}
-        source={{ uri: videoUri }}
-        resizeMode={ResizeMode.CONTAIN}
-        shouldPlay={isPlaying}
-        isLooping={false}
-        isMuted={isMuted}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-      />
+      {!isLoadingVideo && !videoError && videoUri && (
+        <Video
+          ref={videoRef}
+          style={styles.video}
+          source={{ uri: videoUri }}
+          resizeMode={ResizeMode.CONTAIN}
+          shouldPlay={isPlaying}
+          isLooping={false}
+          isMuted={isMuted}
+          onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+        />
+      )}
 
       {/* Controls Overlay */}
-      {showControls && (
+      {showControls && !videoError && (
         <View style={styles.controlsOverlay}>
           {/* Top Controls */}
           <View style={styles.topControls}>
@@ -464,7 +609,6 @@ export default function VideoPlayerScreen() {
                       onValueChange={handleVolumeChange}
                       minimumTrackTintColor="#e50914"
                       maximumTrackTintColor="rgba(255,255,255,0.3)"
-                      thumbStyle={styles.volumeSliderThumb}
                     />
                   </View>
                 )}
@@ -501,6 +645,78 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+    zIndex: 10,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    paddingHorizontal: 32,
+  },
+  errorContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorTitle: {
+    fontSize: 72,
+    fontWeight: 'bold',
+    color: '#e50914',
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  topButtonsContainer: {
+    position: 'absolute',
+    top: 20,
+    left: 16,
+    flexDirection: 'row',
+    gap: 12,
+    zIndex: 10,
+  },
+  backButtonError: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderColor: '#e50914',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportButtonError: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderColor: '#e50914',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   video: {
     flex: 1,

@@ -10,14 +10,12 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { movieAppApi } from '../services/mock-api';
-
-// Debug: Log payment screen API instance
-console.log('💳 Payment screen API instance:', movieAppApi);
+import filmzoneApi from '../services/filmzone-api';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PaymentMethod {
@@ -30,56 +28,18 @@ interface PaymentMethod {
 
 const paymentMethods: PaymentMethod[] = [
   {
-    id: 'credit_card',
-    name: 'Credit Card',
-    icon: '💳',
-    description: 'Visa, Mastercard, American Express',
+    id: 'vnpay',
+    name: 'VNPay',
+    icon: 'VN',
+    description: 'Thanh toán qua cổng VNPay',
     isPopular: true,
-  },
-  {
-    id: 'paypal',
-    name: 'PayPal',
-    icon: '🅿️',
-    description: 'Pay with your PayPal account',
-    isPopular: true,
-  },
-  {
-    id: 'momo',
-    name: 'MoMo',
-    icon: '💜',
-    description: 'MoMo Wallet - Quick and secure',
-    isPopular: true,
-  },
-  {
-    id: 'apple_pay',
-    name: 'Apple Pay',
-    icon: '🍎',
-    description: 'Touch ID or Face ID payment',
-  },
-  {
-    id: 'google_pay',
-    name: 'Google Pay',
-    icon: 'G',
-    description: 'Quick and secure payment',
-  },
-  {
-    id: 'bank_transfer',
-    name: 'Bank Transfer',
-    icon: '🏦',
-    description: 'Direct bank transfer',
-  },
-  {
-    id: 'crypto',
-    name: 'Cryptocurrency',
-    icon: '₿',
-    description: 'Bitcoin, Ethereum, and more',
   },
 ];
 
 export default function PaymentServiceScreen() {
-  const { updateSubscription, authState } = useAuth();
+  const { updateSubscription, authState, updateUser } = useAuth();
   const [selectedMethod, setSelectedMethod] = useState<string>('');
-  const [selectedPlan, setSelectedPlan] = useState<'premium' | 'cinematic'>('premium');
+  const [selectedPlan, setSelectedPlan] = useState<string>('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [cvv, setCvv] = useState('');
@@ -88,188 +48,238 @@ export default function PaymentServiceScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [availableMethods, setAvailableMethods] = useState<PaymentMethod[]>([]);
   const [isLoadingMethods, setIsLoadingMethods] = useState(true);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [priceList, setPriceList] = useState<any[]>([]);
+  const [planPriceMap, setPlanPriceMap] = useState<Record<string, { label: string; amount: number; currency: string; priceId?: number }>>({});
+
+  // helpers
+  const getPlanId = (plan: any) => plan?.planID ?? plan?.planId ?? plan?.id;
+  const getPriceId = (plan: any) => plan?.priceID ?? plan?.priceId;
+  const formatPrice = (price: any) => {
+    if (!price) return 'N/A';
+    if (price.amount !== undefined) {
+      const amountNum = Number(price.amount);
+      const currency = price.currency || '';
+      if (!isNaN(amountNum) && amountNum === 0) return 'Free';
+      return `${price.amount} ${currency}`.trim();
+    }
+    return price.toString();
+  };
 
   useEffect(() => {
-    console.log('💳 Payment: Component mounted');
-    console.log('💳 Payment: Initial selectedMethod:', selectedMethod);
-    console.log('💳 Payment: Initial selectedPlan:', selectedPlan);
     loadPaymentMethods();
+    loadPlans();
   }, []);
 
+  // Ensure auth token is set on filmzoneApi for protected payment endpoint
   useEffect(() => {
-    console.log('💳 Payment: selectedMethod changed to:', selectedMethod);
+    if (authState.token) {
+      filmzoneApi.setToken(authState.token);
+    }
+  }, [authState.token]);
+
+  useEffect(() => {
+  console.log('Payment: selectedMethod changed to:', selectedMethod);
   }, [selectedMethod]);
 
   useEffect(() => {
-    console.log('💳 Payment: selectedPlan changed to:', selectedPlan);
+  console.log('Payment: selectedPlan changed to:', selectedPlan);
   }, [selectedPlan]);
 
   const loadPaymentMethods = async () => {
+    // Chỉ sử dụng phương thức thanh toán VNPay (danh sách tĩnh)
     try {
-      console.log('💳 Payment: Loading payment methods...');
       setIsLoadingMethods(true);
-      const response = await movieAppApi.getPaymentMethods();
-      console.log('💳 Payment: Payment methods response:', response);
-      
-      if (response.success && response.data) {
-        console.log('💳 Payment: Available payment methods:', response.data);
-        setAvailableMethods(response.data);
-      } else {
-        console.log('💳 Payment: Using default payment methods');
-        setAvailableMethods(paymentMethods);
-      }
-    } catch (error) {
-      console.error('💳 Payment: Error loading payment methods:', error);
-      console.log('💳 Payment: Using default payment methods as fallback');
-      // Fallback to static methods
       setAvailableMethods(paymentMethods);
+      // Tự động chọn VNPay nếu chưa có phương thức nào được chọn
+      setSelectedMethod(prev => prev || 'vnpay');
     } finally {
       setIsLoadingMethods(false);
     }
   };
 
+  const loadPlans = async () => {
+    setPlansLoading(true);
+    try {
+      let pricesData: any[] = [];
+      // load prices
+      try {
+        const pricesRes = await filmzoneApi.getAllPrices();
+        const ok = (pricesRes as any).success === true || (pricesRes.errorCode >= 200 && pricesRes.errorCode < 300);
+        pricesData = ok && pricesRes.data ? pricesRes.data : [];
+        setPriceList(pricesData);
+      } catch {
+        pricesData = [];
+        setPriceList([]);
+      }
+
+      // load plans
+      const plansRes = await filmzoneApi.getAllPlans();
+      const plansOk = (plansRes as any).success === true || (plansRes.errorCode >= 200 && plansRes.errorCode < 300);
+      if (plansOk && plansRes.data) {
+        const activePlans = (plansRes.data || []).filter((p: any) => p.isActive !== false);
+        setPlans(activePlans);
+
+        const priceEntries = await Promise.all(
+          activePlans.map(async (p: any, idx: number) => {
+            const pid = String(getPlanId(p) ?? idx);
+            const priceId = getPriceId(p);
+            if (priceId) {
+              const priceRes = await filmzoneApi.getPriceById(priceId);
+              const priceOk = (priceRes as any).success === true || (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+              if (priceOk && priceRes.data) {
+                return [pid, { label: formatPrice(priceRes.data), amount: Number(priceRes.data.amount) || 0, currency: priceRes.data.currency || '', priceId: priceRes.data.priceID ?? priceRes.data.priceId ?? priceId }] as const;
+              }
+            }
+            if (pricesData.length) {
+              const matched = pricesData.find((pr: any) => String(pr.planID ?? pr.planId) === pid);
+              if (matched) {
+                return [pid, { label: formatPrice(matched), amount: Number(matched.amount) || 0, currency: matched.currency || '', priceId: matched.priceID ?? matched.priceId }] as const;
+              }
+            }
+            return [pid, { label: 'N/A', amount: 0, currency: '', priceId: undefined }] as const;
+          })
+        );
+        const map: Record<string, { label: string; amount: number; currency: string; priceId?: number }> = {};
+        const paidPlanIds = new Set<string>();
+        priceEntries.forEach(entry => {
+          if (entry) {
+            const [pid, priceObj] = entry;
+            map[pid] = priceObj;
+            if (priceObj.amount > 0) paidPlanIds.add(pid);
+          }
+        });
+        setPlanPriceMap(map);
+
+        // Only keep plans that have price > 0
+        const paidPlans = activePlans.filter((p: any, idx: number) => {
+          const pid = String(getPlanId(p) ?? idx);
+          return paidPlanIds.has(pid);
+        });
+        setPlans(paidPlans);
+
+        // default selected plan (paid only)
+        if (paidPlans.length > 0) {
+          setSelectedPlan(prev => prev || String(getPlanId(paidPlans[0]) ?? ''));
+        } else {
+          setSelectedPlan('');
+        }
+      } else {
+        setPlans([]);
+      }
+    } catch {
+      setPlans([]);
+    } finally {
+      setPlansLoading(false);
+    }
+  };
+
 
   const handleMethodSelect = async (methodId: string) => {
-    console.log('💳 Payment: Method selected:', methodId);
-    console.log('💳 Payment: Previous selectedMethod:', selectedMethod);
+  console.log('Payment: Method selected:', methodId);
+  console.log('Payment: Previous selectedMethod:', selectedMethod);
     
     try {
       await Haptics.selectionAsync();
     } catch {}
     setSelectedMethod(methodId);
     
-    console.log('💳 Payment: New selectedMethod set to:', methodId);
+  console.log('Payment: New selectedMethod set to:', methodId);
   };
 
   const handlePayment = async () => {
-    console.log('💳 Payment: handlePayment called');
-    console.log('💳 Payment: selectedMethod:', selectedMethod);
-    console.log('💳 Payment: selectedPlan:', selectedPlan);
-    console.log('💳 Payment: isProcessing:', isProcessing);
+  console.log('Payment: handlePayment called');
+  console.log('Payment: selectedMethod:', selectedMethod);
+  console.log('Payment: selectedPlan:', selectedPlan);
+  console.log('Payment: isProcessing:', isProcessing);
     
     if (!selectedMethod) {
-      console.log('❌ Payment: No payment method selected');
+  console.log('Payment: No payment method selected');
       Alert.alert('Error', 'Please select a payment method');
       return;
     }
 
     if (selectedMethod === 'credit_card') {
-      console.log('💳 Payment: Credit card validation');
-      console.log('💳 Payment: cardNumber:', cardNumber);
-      console.log('💳 Payment: expiryDate:', expiryDate);
-      console.log('💳 Payment: cvv:', cvv);
-      console.log('💳 Payment: cardholderName:', cardholderName);
+  console.log('Payment: Credit card validation');
+  console.log('Payment: cardNumber:', cardNumber);
+  console.log('Payment: expiryDate:', expiryDate);
+  console.log('Payment: cvv:', cvv);
+  console.log('Payment: cardholderName:', cardholderName);
       
       if (!cardNumber || !expiryDate || !cvv || !cardholderName) {
-        console.log('❌ Payment: Credit card details incomplete');
+  console.log('Payment: Credit card details incomplete');
         Alert.alert('Error', 'Please fill in all credit card details');
         return;
       }
     }
 
     if (selectedMethod === 'momo') {
-      console.log('💳 Payment: MoMo validation');
-      console.log('💳 Payment: momoPhoneNumber:', momoPhoneNumber);
+  console.log('Payment: MoMo validation');
+  console.log('Payment: momoPhoneNumber:', momoPhoneNumber);
       
       if (!momoPhoneNumber || momoPhoneNumber.length < 10) {
-        console.log('❌ Payment: MoMo phone number invalid');
+  console.log('Payment: MoMo phone number invalid');
         Alert.alert('Error', 'Please enter a valid MoMo phone number');
         return;
       }
     }
 
-    console.log('✅ Payment: Validation passed, processing payment...');
+  console.log('Payment: Validation passed, processing payment...');
     setIsProcessing(true);
     
     try {
-      const planPrice = selectedPlan === 'premium' ? 19.99 : 39.99;
-      const taxAmount = selectedPlan === 'premium' ? 1.99 : 3.99;
-      const totalAmount = planPrice + taxAmount;
+      const priceObj = planPriceMap[selectedPlan];
+      if (!priceObj || !priceObj.priceId) {
+        Alert.alert('Error', 'Price information not available for this plan.');
+        return;
+      }
 
-      const paymentData = {
-        method: selectedMethod,
-        amount: totalAmount,
-        currency: 'USD',
-        ...(selectedMethod === 'credit_card' && {
-          cardDetails: {
-            number: cardNumber,
-            expiry: expiryDate,
-            cvv: cvv,
-            name: cardholderName,
-          },
-        }),
-        ...(selectedMethod === 'momo' && {
-          momoDetails: {
-            phoneNumber: momoPhoneNumber,
-            amount: 10.98,
-          },
-        }),
-      };
+      // VNPay checkout
+      const response = await filmzoneApi.createVnPayCheckout({ priceId: Number(priceObj.priceId) });
+      console.log('VNPay checkout response:', JSON.stringify(response, null, 2));
+      const isOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
 
-      const response = await movieAppApi.processPayment(paymentData);
-      
-      if (response.success) {
+      if (isOk && response.data?.paymentUrl) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        
-        // Update subscription based on selected plan
-        await updateSubscription(selectedPlan);
-        
-        // Add billing history
-        if (authState.user) {
-          const billingData = {
-            userID: authState.user.userID,
-            subscriptionPlan: selectedPlan,
-            amount: totalAmount,
-            paymentMethod: selectedMethod,
-            status: 'completed',
-            transactionID: response.data?.transactionId,
-            description: `Subscription: ${selectedPlan.toUpperCase()} plan`
-          };
-          
-          console.log('💳 Payment: Adding billing history:', billingData);
-          
-          const billingResponse = await movieAppApi.addBillingHistory(billingData);
-          console.log('💳 Payment: Billing history response:', billingResponse);
-          
-          // Force refresh billing history after successful payment
-          console.log('💳 Payment: Billing history added successfully, will refresh on profile return');
+        await Linking.openURL(response.data.paymentUrl);
+        Alert.alert('Redirecting to payment', 'We are opening the VNPay checkout page.');
+
+        // Optimistically update current subscription in authState so Home/Profile reflect new plan
+        try {
+          const selectedPlanObj = plans.find(p => String(getPlanId(p)) === String(selectedPlan));
+          const legacyCode = (selectedPlanObj?.code || selectedPlanObj?.name || '').toLowerCase();
+          let legacyPlan: 'starter' | 'premium' | 'cinematic' = 'starter';
+          if (legacyCode.includes('cinema')) legacyPlan = 'cinematic';
+          else if (legacyCode.includes('prem')) legacyPlan = 'premium';
+
+          // Keep legacy update for mock flows
+          await updateSubscription(legacyPlan);
+
+          // Also update FilmZone-style subscription fields (planID/priceID) for UI
+          if (selectedPlanObj) {
+            const planIdValue = getPlanId(selectedPlanObj);
+            updateUser({
+              subscription: {
+                ...(authState.user?.subscription as any),
+                plan: selectedPlanObj.code || selectedPlanObj.name || legacyPlan,
+                status: 'active',
+                startDate: new Date().toISOString(),
+                endDate: authState.user?.subscription?.endDate,
+                autoRenew: true,
+                planID: planIdValue,
+                planId: planIdValue,
+                priceID: priceObj.priceId,
+                priceId: priceObj.priceId,
+              } as any,
+            } as any);
+          }
+        } catch (err) {
+          console.warn('Payment: failed to update subscription after checkout start', err);
         }
-        
-        const currentPlan = authState.user?.subscription?.plan || 'starter';
-        const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-        const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
-        const selectedLevel = planHierarchy[selectedPlan as keyof typeof planHierarchy] || 0;
-        
-        let actionText = '';
-        if (selectedLevel > currentLevel) {
-          actionText = 'upgraded to';
-        } else if (selectedLevel < currentLevel) {
-          actionText = 'downgraded to';
-        } else {
-          actionText = 'renewed';
-        }
-        
-        Alert.alert(
-          'Payment Successful',
-          `Your payment has been processed successfully!\nTransaction ID: ${response.data?.transactionId}\n\nYour subscription has been ${actionText} ${selectedPlan.toUpperCase()} plan!`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigate back to profile and trigger billing history refresh
-                router.back();
-                // Add a small delay to ensure navigation completes
-                setTimeout(() => {
-                  // This will trigger the useFocusEffect in profile screen
-                  console.log('💳 Payment: Navigation back to profile completed');
-                }, 100);
-              },
-            },
-          ]
-        );
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Payment Failed', response.errorMessage || 'Please try again or use a different payment method');
+        Alert.alert('Payment Failed', response.errorMessage || `Unable to start checkout (code ${response.errorCode ?? 'n/a'})`);
       }
     } catch (error) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -310,7 +320,7 @@ export default function PaymentServiceScreen() {
       </View>
       {selectedMethod === method.id && (
         <View style={styles.selectedIndicator}>
-          <Text style={styles.selectedText}>✓ Selected</Text>
+          <Text style={styles.selectedText}>Selected</Text>
         </View>
       )}
     </Pressable>
@@ -386,10 +396,10 @@ export default function PaymentServiceScreen() {
         
         <View style={styles.momoInfo}>
           <Text style={styles.momoInfoText}>
-            💜 MoMo will redirect you to the MoMo app for payment confirmation
+            MoMo will redirect you to the MoMo app for payment confirmation
           </Text>
           <Text style={styles.momoInfoText}>
-            🔒 Your payment is secured by MoMo's encryption
+            Your payment is secured by MoMo's encryption
           </Text>
         </View>
       </View>
@@ -419,74 +429,39 @@ export default function PaymentServiceScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Choose Subscription Plan</Text>
               <Text style={styles.sectionSubtitle}>
-                {(() => {
-                  const currentPlan = authState.user?.subscription?.plan || 'starter';
-                  const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-                  const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
-                  
-                  if (currentLevel === 0) {
-                    return 'Select your preferred subscription plan:';
-                  } else if (currentLevel === 1) {
-                    return 'Upgrade to Cinematic or stay with Premium:';
-                  } else {
-                    return 'Downgrade to Premium or stay with Cinematic:';
-                  }
-                })()}
+                Select your preferred subscription plan:
               </Text>
               
-              <View style={styles.plansContainer}>
-                <Pressable 
-                  onPress={() => setSelectedPlan('premium')}
-                  style={({ pressed }) => [
-                    styles.planCard,
-                    selectedPlan === 'premium' && styles.planCardSelected,
-                    pressed && { opacity: 0.9 }
-                  ]}
-                >
-                  <Text style={styles.planTitle}>Premium</Text>
-                  <Text style={styles.planPrice}>$19.99</Text>
-                  <Text style={styles.planDuration}>per month</Text>
-                  {(() => {
-                    const currentPlan = authState.user?.subscription?.plan || 'starter';
-                    if (currentPlan === 'premium') {
-                      return <Text style={styles.planStatus}>Current Plan</Text>;
-                    } else if (currentPlan === 'cinematic') {
-                      return <Text style={styles.planDowngrade}>Downgrade</Text>;
-                    } else {
-                      return <Text style={styles.planUpgrade}>Upgrade</Text>;
-                    }
-                  })()}
-                  <Text style={styles.planFeatures}>• Full HD</Text>
-                  <Text style={styles.planFeatures}>• Lifetime Availability</Text>
-                  <Text style={styles.planFeatures}>• TV & Desktop</Text>
-                  <Text style={styles.planFeatures}>• 24/7 Support</Text>
-                </Pressable>
-                
-                <Pressable 
-                  onPress={() => setSelectedPlan('cinematic')}
-                  style={({ pressed }) => [
-                    styles.planCard,
-                    selectedPlan === 'cinematic' && styles.planCardSelected,
-                    pressed && { opacity: 0.9 }
-                  ]}
-                >
-                  <Text style={styles.planTitle}>Cinematic</Text>
-                  <Text style={styles.planPrice}>$39.99</Text>
-                  <Text style={styles.planDuration}>per 2 months</Text>
-                  {(() => {
-                    const currentPlan = authState.user?.subscription?.plan || 'starter';
-                    if (currentPlan === 'cinematic') {
-                      return <Text style={styles.planStatus}>Current Plan</Text>;
-                    } else {
-                      return <Text style={styles.planUpgrade}>Upgrade</Text>;
-                    }
-                  })()}
-                  <Text style={styles.planFeatures}>• Ultra HD</Text>
-                  <Text style={styles.planFeatures}>• Lifetime Availability</Text>
-                  <Text style={styles.planFeatures}>• Any Device</Text>
-                  <Text style={styles.planFeatures}>• 24/7 Support</Text>
-                </Pressable>
-              </View>
+              {plansLoading ? (
+                <View style={[styles.planCard, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                  <Text style={styles.planTitle}>Loading plans...</Text>
+                </View>
+              ) : plans.length > 0 ? (
+                <View style={styles.plansContainer}>
+                  {plans.map((p: any, idx: number) => {
+                    const pid = String(getPlanId(p) ?? idx);
+                    const selected = selectedPlan === pid;
+                    const priceLabel = planPriceMap[pid]?.label || 'N/A';
+                    return (
+                      <Pressable 
+                        key={pid}
+                        onPress={() => setSelectedPlan(pid)}
+                        style={({ pressed }) => [
+                          styles.planCard,
+                          selected && styles.planCardSelected,
+                          pressed && { opacity: 0.9 }
+                        ]}
+                      >
+                        <Text style={styles.planTitle}>{p.name || p.code || `Plan ${pid}`}</Text>
+                        <Text style={styles.planPrice}>{priceLabel}</Text>
+                        {p.description ? <Text style={styles.planDuration}>{p.description}</Text> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={styles.sectionSubtitle}>No active plans available.</Text>
+              )}
             </View>
 
             {/* Payment Methods */}
@@ -515,23 +490,23 @@ export default function PaymentServiceScreen() {
               <View style={styles.summaryCard}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>
-                    FlixGo {selectedPlan === 'premium' ? 'Premium' : 'Cinematic'}
+                    {selectedPlan
+                      ? `Plan #${selectedPlan}`
+                      : 'Select a plan'}
                   </Text>
                   <Text style={styles.summaryValue}>
-                    ${selectedPlan === 'premium' ? '19.99' : '39.99'}
-                  </Text>
-                </View>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Tax</Text>
-                  <Text style={styles.summaryValue}>
-                    ${selectedPlan === 'premium' ? '1.99' : '3.99'}
+                    {selectedPlan && planPriceMap[selectedPlan]?.label
+                      ? planPriceMap[selectedPlan].label
+                      : 'N/A'}
                   </Text>
                 </View>
                 <View style={styles.summaryDivider} />
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryTotalLabel}>Total</Text>
                   <Text style={styles.summaryTotalValue}>
-                    ${selectedPlan === 'premium' ? '21.98' : '43.98'}
+                    {selectedPlan && planPriceMap[selectedPlan]?.label
+                      ? planPriceMap[selectedPlan].label
+                      : 'N/A'}
                   </Text>
                 </View>
               </View>
@@ -862,3 +837,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 });
+

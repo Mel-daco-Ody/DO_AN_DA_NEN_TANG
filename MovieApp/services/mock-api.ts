@@ -444,8 +444,8 @@ class MockMovieAppApi {
     // Add comment to the comments array
     this.comments.push(newComment);
     
-    console.log('💬 Comment added:', newComment);
-    console.log('💬 Total comments:', this.comments.length);
+  console.log('Comment added:', newComment);
+  console.log('Total comments:', this.comments.length);
     
     return {
       errorCode: 200,
@@ -1220,28 +1220,28 @@ class MockMovieAppApi {
         {
           id: 'credit_card',
           name: 'Credit Card',
-          icon: '💳',
+          icon: 'CC',
           description: 'Visa, Mastercard, American Express',
           isPopular: true,
         },
         {
           id: 'paypal',
           name: 'PayPal',
-          icon: '🅿️',
+          icon: 'PP',
           description: 'Pay with your PayPal account',
           isPopular: true,
         },
         {
           id: 'momo',
           name: 'MoMo',
-          icon: '💜',
+          icon: 'MoMo',
           description: 'MoMo Wallet - Quick and secure',
           isPopular: true,
         },
         {
           id: 'apple_pay',
           name: 'Apple Pay',
-          icon: '🍎',
+          icon: 'AP',
           description: 'Touch ID or Face ID payment',
         },
         {
@@ -1253,13 +1253,13 @@ class MockMovieAppApi {
         {
           id: 'bank_transfer',
           name: 'Bank Transfer',
-          icon: '🏦',
+          icon: 'BT',
           description: 'Direct bank transfer',
         },
         {
           id: 'crypto',
           name: 'Cryptocurrency',
-          icon: '₿',
+          icon: 'BTC',
           description: 'Bitcoin, Ethereum, and more',
         },
       ],
@@ -1408,40 +1408,40 @@ class MockMovieAppApi {
     ];
     
     this.comments.push(...sampleComments);
-    console.log('📊 Overview: Added sample comments for user:', userId);
+  console.log('Overview: Added sample comments for user:', userId);
   }
 
   // Overview Statistics APIs
   async getOverviewStats(userId: string) {
     await this.delay();
     
-    console.log('📊 Overview: Getting overview stats for user:', userId);
-    console.log('📊 Overview: Current user:', this.currentUser?.userID);
-    console.log('📊 Overview: Total comments in system:', this.comments.length);
+  console.log('Overview: Getting overview stats for user:', userId);
+  console.log('Overview: Current user:', this.currentUser?.userID);
+  console.log('Overview: Total comments in system:', this.comments.length);
     
     // Get subscription plan from current user
     const subscriptionPlan = this.currentUser?.subscription?.plan || 'starter';
     
     // Count films watched (from watch progress)
     const filmsWatched = this.watchProgress.length;
-    console.log('📊 Overview: Films watched:', filmsWatched);
+  console.log('Overview: Films watched:', filmsWatched);
     
     // Count comments (from actual comments data)
     const userComments = this.comments.filter(comment => comment.userID === parseInt(userId));
     let commentsCount = userComments.length;
-    console.log('📊 Overview: User comments count before init:', commentsCount);
+  console.log('Overview: User comments count before init:', commentsCount);
     
     // If no comments yet, initialize with some sample comments for the user
     if (commentsCount === 0 && this.currentUser) {
-      console.log('📊 Overview: No comments found, initializing sample comments...');
+  console.log('Overview: No comments found, initializing sample comments...');
       this.initializeSampleComments(parseInt(userId));
       const updatedUserComments = this.comments.filter(comment => comment.userID === parseInt(userId));
       commentsCount = updatedUserComments.length;
-      console.log('📊 Overview: Initialized sample comments, count:', commentsCount);
+  console.log('Overview: Initialized sample comments, count:', commentsCount);
     }
     
-    console.log('📊 Overview: Final comments count:', commentsCount);
-    console.log('📊 Overview: User comments:', userComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', createdAt: c.createdAt })));
+  console.log('Overview: Final comments count:', commentsCount);
+  console.log('Overview: User comments:', userComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', createdAt: c.createdAt })));
     
     // Get recent views (from watch progress)
     const recentViews = this.watchProgress.slice(0, 5).map((progress: any) => {
@@ -1479,7 +1479,7 @@ class MockMovieAppApi {
         };
       });
     
-    console.log('📊 Overview: Latest comments:', latestComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', movie: c.movie.title })));
+  console.log('Overview: Latest comments:', latestComments.map(c => ({ id: c.commentID, content: c.content.substring(0, 20) + '...', movie: c.movie.title })));
     
     return {
       errorCode: 200,
@@ -1540,7 +1540,7 @@ class MockMovieAppApi {
       return this.createResponse(null, this.ERROR_CODES.UNAUTHORIZED, this.ERROR_MESSAGES.INVALID_TOKEN);
     }
 
-    console.log('💰 addBillingHistory Debug:');
+  console.log('addBillingHistory Debug:');
     console.log('- Billing data received:', billingData);
     console.log('- Current userID:', this.currentUser.userID);
 
@@ -1593,8 +1593,8 @@ class MockMovieAppApi {
       return this.createResponse(null, this.ERROR_CODES.UNAUTHORIZED, this.ERROR_MESSAGES.INVALID_TOKEN);
     }
 
-    // Debug logging
-    console.log('🔍 getBillingHistory Debug:');
+  // Debug logging
+  console.log('getBillingHistory Debug:');
     console.log('- Requested userID:', userID, 'type:', typeof userID);
     console.log('- Current user:', this.currentUser);
     console.log('- Current userID:', this.currentUser.userID, 'type:', typeof this.currentUser.userID);
@@ -1620,12 +1620,296 @@ class MockMovieAppApi {
   }
 }
 
-// Create mock API instance
-export const movieAppApi = new MockMovieAppApi({
-  baseURL: 'http://localhost:6000', // Not used in mock
-});
+// ============================================
+// MIGRATION TO REAL API
+// This file now acts as a compatibility wrapper
+// Redirecting calls to FilmZone real API
+// ============================================
+
+import { filmzoneApi } from './filmzone-api';
+
+// Create wrapper that implements MockMovieAppApi interface but uses real API
+class MovieAppApiWrapper {
+  private realApi = filmzoneApi;
+
+  // Forward token management
+  setToken(token: string | null) {
+    this.realApi.setToken(token);
+  }
+
+  // ==================== AUTH APIs ====================
+  async register(userName: string, email: string, password: string, firstName?: string, lastName?: string, gender?: string) {
+    return this.realApi.register({ userName, email, password, firstName, lastName, gender });
+  }
+
+  async login(userName: string, password: string) {
+    return this.realApi.login({ userName, password });
+  }
+
+  async getCurrentUser() {
+    return this.realApi.getCurrentUser();
+  }
+
+  async updateUser(userUpdates: Partial<any>) {
+    return this.realApi.updateUser(userUpdates);
+  }
+
+  async changePassword(userId: string, passwordData: any) {
+    // Map to password change flow
+    const emailResponse = await this.realApi.startPasswordChangeByEmail({ email: passwordData.email || '' });
+    if (!emailResponse.success) return emailResponse;
+    
+    const verifyResponse = await this.realApi.verifyEmailCode({ email: passwordData.email || '', code: passwordData.code || '' });
+    if (!verifyResponse.success || !verifyResponse.data) return verifyResponse;
+    
+    return this.realApi.commitPasswordChange({
+      ticket: verifyResponse.data.ticket,
+      oldPassword: passwordData.oldPassword || '',
+      newPassword: passwordData.newPassword || '',
+    });
+  }
+
+  async logout() {
+    return this.realApi.logout();
+  }
+
+  // ==================== MOVIE APIs ====================
+  async getMovies() {
+    return this.realApi.getMovies();
+  }
+
+  async getMovie(movieId: string) {
+    const response = await this.realApi.getMovie(movieId);
+    if (!response || !response.success) {
+      return null;
+    }
+    return response.data || null;
+  }
+
+  async getFeaturedMovies() {
+    return this.realApi.getFeaturedMovies();
+  }
+
+  async getTrendingMovies() {
+    return this.realApi.getTrendingMovies();
+  }
+
+  async searchMovies(query: string) {
+    return this.realApi.searchMovies(query);
+  }
+
+  async getMoviesByCategory(categoryId: number) {
+    return this.realApi.getMoviesByCategory(categoryId);
+  }
+
+  async getMoviesMainScreen() {
+    return this.realApi.getMoviesMainScreen();
+  }
+
+  async getNewReleaseMovies() {
+    return this.realApi.getNewReleaseMovies();
+  }
+
+  async getMovieById(movieId: number) {
+    return this.realApi.getMovieById(movieId);
+  }
+
+  // ==================== EPISODE APIs ====================
+  async getEpisodesByMovie(movieId: number) {
+    return this.realApi.getEpisodesByMovie(movieId);
+  }
+
+  // ==================== WATCH PROGRESS APIs ====================
+  async getWatchProgress() {
+    const currentUser = await this.realApi.getCurrentUser();
+    if (!currentUser.success || !currentUser.data) {
+      return {
+        errorCode: 401,
+        errorMessage: 'User not authenticated',
+        success: false,
+        data: [],
+      };
+    }
+    return this.realApi.getWatchProgressByUserId(currentUser.data.userID);
+  }
+
+  async addToWatchProgress(movieId: number) {
+    return this.realApi.addToWatchProgress(movieId);
+  }
+
+  async updateWatchProgress(movieId: number, positionSeconds: number, durationSeconds?: number) {
+    return this.realApi.updateWatchProgressByMovie(movieId, positionSeconds, durationSeconds);
+  }
+
+  // ==================== EPISODE WATCH PROGRESS APIs ====================
+  async getEpisodeWatchProgress() {
+    return this.realApi.getEpisodeWatchProgress();
+  }
+
+  async addEpisodeWatchProgress(episodeId: number, positionSeconds: number, durationSeconds?: number) {
+    return this.realApi.addEpisodeWatchProgress(episodeId, positionSeconds, durationSeconds);
+  }
+
+  // ==================== SAVED MOVIES APIs ====================
+  async getSavedMovies() {
+    return this.realApi.getSavedMovies();
+  }
+
+  async getSavedMoviesByUserID(userId: number) {
+    return this.realApi.getSavedMoviesByUserID(userId);
+  }
+
+  async addToSavedMovies(movieId: number, userId?: number) {
+    return this.realApi.addToSavedMovies(movieId, userId);
+  }
+
+  async removeFromSavedMovies(movieId: number, userId?: number) {
+    return this.realApi.removeFromSavedMovies(movieId, userId);
+  }
+
+  async isMovieSaved(movieId: number, userId?: number) {
+    return this.realApi.isMovieSaved(movieId, userId);
+  }
+
+  // ==================== COMMENT APIs ====================
+  async getCommentsByMovie(movieId: string) {
+    return this.realApi.getCommentsByMovie(movieId);
+  }
+
+  async addComment(commentData: any) {
+    return this.realApi.addComment(commentData);
+  }
+
+  async updateComment(commentId: number, commentData: any) {
+    return this.realApi.updateComment(commentId, { content: commentData.content });
+  }
+
+  async deleteComment(commentId: number) {
+    return this.realApi.deleteComment(commentId);
+  }
+
+  // ==================== REVIEW APIs ====================
+  async getReviewsByMovie(movieId: string) {
+    return this.realApi.getReviewsByMovie(movieId);
+  }
+
+  async addReview(reviewData: any) {
+    return this.realApi.addReview(reviewData);
+  }
+
+  async updateReview(reviewId: number, reviewData: any) {
+    return this.realApi.updateReview(reviewId, reviewData);
+  }
+
+  async deleteReview(reviewId: number) {
+    return this.realApi.deleteReview(reviewId);
+  }
+
+  // ==================== FAVORITES APIs ====================
+  async getFavorites(userId: string) {
+    return this.realApi.getFavorites(userId);
+  }
+
+  async addToFavorites(userId: string, movieId: string) {
+    return this.realApi.addToFavorites(userId, movieId);
+  }
+
+  async removeFromFavorites(userId: string, movieId: string) {
+    return this.realApi.removeFromFavorites(userId, movieId);
+  }
+
+  // ==================== METADATA APIs ====================
+  async getAllTags() {
+    return this.realApi.getAllTags();
+  }
+
+  async getAllRegions() {
+    return this.realApi.getAllRegions();
+  }
+
+  async getAllPersons() {
+    return this.realApi.getAllPersons();
+  }
+
+  // ==================== ACTOR APIs ====================
+  async getAllActors() {
+    return this.realApi.getAllActors();
+  }
+
+  async getActorById(actorId: number) {
+    return this.realApi.getActorById(actorId);
+  }
+
+  async getActorsByMovie(movieId: number) {
+    return this.realApi.getActorsByMovie(movieId);
+  }
+
+  // ==================== USER RATING APIs ====================
+  async getUserRating(movieId: number) {
+    return this.realApi.getUserRating(movieId);
+  }
+
+  async addUserRating(movieId: number, stars: number) {
+    return this.realApi.addUserRating(movieId, stars);
+  }
+
+  async updateUserRating(movieId: number, stars: number) {
+    return this.realApi.updateUserRatingByMovie(movieId, stars);
+  }
+
+  // ==================== ACCOUNT MANAGEMENT APIs ====================
+  async startPasswordChangeByEmail(email: string) {
+    return this.realApi.startPasswordChangeByEmail({ email });
+  }
+
+  async verifyEmailCode(email: string, code: string) {
+    return this.realApi.verifyEmailCode({ email, code });
+  }
+
+  async commitPasswordChange(ticket: string, oldPassword: string, newPassword: string) {
+    return this.realApi.commitPasswordChange({ ticket, oldPassword, newPassword });
+  }
+
+  // ==================== PAYMENT APIs ====================
+  async createVnPayCheckout(priceId: number) {
+    return this.realApi.createVnPayCheckout({ priceId });
+  }
+
+  async getPaymentMethods() {
+    return this.realApi.getPaymentMethods();
+  }
+
+  async processPayment(paymentData: any) {
+    return this.realApi.processPayment(paymentData);
+  }
+
+  async getPaymentHistory(userId: string) {
+    return this.realApi.getPaymentHistory(userId);
+  }
+
+  // ==================== WATCH HISTORY APIs ====================
+  async getWatchHistory(userId: string) {
+    return this.realApi.getWatchHistory(userId);
+  }
+
+  async addToWatchHistory(userId: string, historyData: any) {
+    return this.realApi.addToWatchHistory(userId, historyData);
+  }
+
+  async updateWatchHistory(userId: string, historyId: number, progress: number) {
+    return this.realApi.updateWatchHistory(userId, historyId, progress);
+  }
+
+  // ==================== BILLING HISTORY APIs ====================
+  async getBillingHistory(userId: string) {
+    return this.realApi.getBillingHistory(userId);
+  }
+}
+
+// Export wrapper instance that forwards to real API
+export const movieAppApi = new MovieAppApiWrapper();
 
 // Debug: Log instance creation
-console.log('🏗️ Mock API instance created:', movieAppApi);
+console.log('MovieAppApi wrapper created, forwarding to FilmZone real API:', movieAppApi);
 
 export default movieAppApi;

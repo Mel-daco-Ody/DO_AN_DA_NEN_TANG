@@ -85,7 +85,7 @@ export default function ActorScreen() {
       <View style={styles.filmContent}>
         <Text style={styles.filmTitle}>{item.title}</Text>
         <View style={styles.filmGenres}>
-          {item.genres.map((genre: string, index: number) => (
+          {(item.genres || []).map((genre: string, index: number) => (
             <Text key={index} style={styles.filmGenre}>{genre}</Text>
           ))}
         </View>
@@ -185,7 +185,7 @@ export default function ActorScreen() {
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Genres:</Text>
               <View style={styles.genresContainer}>
-                {actor.genres.map((genre: string, index: number) => (
+                {(actor.genres || []).map((genre: string, index: number) => (
                   <Text key={index} style={styles.genreTag}>{genre}</Text>
                 ))}
               </View>
@@ -235,7 +235,7 @@ export default function ActorScreen() {
         {/* Tab Content */}
         {activeTab === 'filmography' ? (
           <FlatList
-            data={actor.filmography}
+            data={actor.filmography || []}
             renderItem={renderFilmographyItem}
             keyExtractor={(item) => item.id}
             numColumns={2}
@@ -244,7 +244,7 @@ export default function ActorScreen() {
           />
         ) : (
           <FlatList
-            data={actor.photos}
+            data={actor.photos || []}
             renderItem={renderPhotoItem}
             keyExtractor={(item, index) => index.toString()}
             numColumns={2}

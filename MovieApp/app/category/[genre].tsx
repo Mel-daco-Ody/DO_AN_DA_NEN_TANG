@@ -1,44 +1,86 @@
-import { StyleSheet, View, Text, ScrollView, Pressable, FlatList, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, Pressable, FlatList, Dimensions, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as React from 'react';
 import ImageWithPlaceholder from '../../components/ImageWithPlaceholder';
+import filmzoneApi from '../../services/filmzone-api';
 
-// Mock data for movies and series
-const allItems = [
-  { id: '1', title: 'Fast & Furious 9', cover: 'https://via.placeholder.com/300x450', categories: ['Action', 'Thriller'], rating: '8.5', year: 2021, duration: '143 phút', country: 'Mỹ', isSeries: false },
-  { id: '2', title: 'The Matrix Resurrections', cover: 'https://via.placeholder.com/300x450', categories: ['Action', 'Sci-Fi'], rating: '7.2', year: 2021, duration: '148 phút', country: 'Mỹ', isSeries: false },
-  { id: '3', title: 'Spider-Man: No Way Home', cover: 'https://via.placeholder.com/300x450', categories: ['Action', 'Adventure'], rating: '9.1', year: 2021, duration: '148 phút', country: 'Mỹ', isSeries: false },
-  { id: '4', title: 'Stranger Things', cover: 'https://via.placeholder.com/300x450', categories: ['Drama', 'Sci-Fi', 'Thriller'], rating: '8.7', year: 2016, duration: '4 mùa', country: 'Mỹ', isSeries: true },
-  { id: '5', title: 'The Witcher', cover: 'https://via.placeholder.com/300x450', categories: ['Fantasy', 'Adventure'], rating: '8.2', year: 2019, duration: '2 mùa', country: 'Mỹ', isSeries: true },
-  { id: '6', title: 'Money Heist', cover: 'https://via.placeholder.com/300x450', categories: ['Crime', 'Thriller'], rating: '8.3', year: 2017, duration: '5 phần', country: 'Tây Ban Nha', isSeries: true },
-  { id: '7', title: 'Squid Game', cover: 'https://via.placeholder.com/300x450', categories: ['Thriller', 'Drama'], rating: '8.1', year: 2021, duration: '1 mùa', country: 'Hàn Quốc', isSeries: true },
-  { id: '8', title: 'Black Widow', cover: 'https://via.placeholder.com/300x450', categories: ['Action', 'Adventure'], rating: '6.7', year: 2021, duration: '134 phút', country: 'Mỹ', isSeries: false },
-  { id: '9', title: 'The Queen\'s Gambit', cover: 'https://via.placeholder.com/300x450', categories: ['Drama'], rating: '8.5', year: 2020, duration: '1 mùa', country: 'Mỹ', isSeries: true },
-  { id: '10', title: 'Dune', cover: 'https://via.placeholder.com/300x450', categories: ['Sci-Fi', 'Adventure'], rating: '8.0', year: 2021, duration: '155 phút', country: 'Mỹ', isSeries: false },
-  { id: '11', title: 'Lupin', cover: 'https://via.placeholder.com/300x450', categories: ['Crime', 'Thriller'], rating: '7.5', year: 2021, duration: '2 phần', country: 'Pháp', isSeries: true },
-  { id: '12', title: 'No Time to Die', cover: 'https://via.placeholder.com/300x450', categories: ['Action', 'Thriller'], rating: '7.3', year: 2021, duration: '163 phút', country: 'Anh', isSeries: false },
-];
+
 
 export default function CategoryScreen() {
   const { genre } = useLocalSearchParams();
   const width = Dimensions.get('window').width;
   const itemWidth = (width - 48) / 2; // 2 columns with margins
+  const [items, setItems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Filter items by genre
-  const filteredItems = allItems.filter(item => 
-    item.categories.includes(genre as string)
-  );
+  useEffect(() => {
+    const loadCategoryMovies = async () => {
+      if (!genre) return;
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        // 1. Lấy toàn bộ tags để map tagName -> tagID
+        const tagsResponse = await filmzoneApi.getAllTags();
+        const isTagsOk = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
+
+        let tagId: number | undefined;
+        if (isTagsOk) {
+          const matchedTag = tagsResponse.data!.find(
+            (t: any) => t.tagName.toLowerCase() === (genre as string).toLowerCase()
+          );
+          tagId = matchedTag?.tagID;
+        }
+
+        // 2. Nếu tìm được tagId thì search theo tagIds, nếu không thì search theo text genre
+        let searchResponse;
+        if (tagId) {
+          searchResponse = await filmzoneApi.searchMovies('', { tagIds: [tagId] });
+        } else {
+          searchResponse = await filmzoneApi.searchMovies(genre as string);
+        }
+
+        const isSearchOk =
+          searchResponse.errorCode >= 200 && searchResponse.errorCode < 300 && searchResponse.data;
+
+        if (!isSearchOk) {
+          setItems([]);
+          setError('Không thể tải danh sách phim.');
+        } else {
+          setItems(searchResponse.data || []);
+        }
+      } catch (e) {
+        setError('Đã xảy ra lỗi khi tải dữ liệu.');
+        setItems([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCategoryMovies();
+  }, [genre]);
 
   const renderItem = ({ item }: { item: any }) => (
     <Pressable 
       style={[styles.itemCard, { width: itemWidth }]} 
       onPress={() => {
-        if (item.isSeries) {
-          router.push(`/details/series/${item.id}?title=${item.title}&cover=${item.cover}&categories=${item.categories.join(',')}&rating=${item.rating}&year=${item.year}&duration=${item.duration}&country=${item.country}` as any);
-        } else {
-          router.push(`/details/movie/${item.id}?title=${item.title}&cover=${item.cover}&categories=${item.categories.join(',')}&rating=${item.rating}&year=${item.year}&duration=${item.duration}&country=${item.country}` as any);
-        }
+        const isSeries = item.isSeries;
+        const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+
+        router.push({
+          pathname,
+          params: {
+            id: item.id,
+            title: item.title,
+            cover: item.cover,
+            categories: Array.isArray(item.categories) ? item.categories.join(' • ') : '',
+            rating: item.rating,
+            year: item.year || '',
+            country: item.studio || '',
+          },
+        } as any);
       }}
     >
       <ImageWithPlaceholder 
@@ -63,23 +105,36 @@ export default function CategoryScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      {/* Results Count */}
-      <View style={styles.resultsHeader}>
-        <Text style={styles.resultsText}>
-          {filteredItems.length} {filteredItems.length === 1 ? 'kết quả' : 'kết quả'} cho "{genre}"
-        </Text>
-      </View>
+      {/* Loading / Error / Results Count */}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#e50914" />
+          <Text style={styles.loadingText}>Đang tải...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.resultsHeader}>
+          <Text style={styles.resultsText}>{error}</Text>
+        </View>
+      ) : (
+        <View style={styles.resultsHeader}>
+          <Text style={styles.resultsText}>
+            {items.length} {items.length === 1 ? 'kết quả' : 'kết quả'} cho "{genre}"
+          </Text>
+        </View>
+      )}
 
       {/* Movies/Series Grid */}
-      <FlatList
-        data={filteredItems}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.gridContainer}
-        columnWrapperStyle={styles.row}
-        scrollEnabled={false}
-      />
+      {!isLoading && !error && (
+        <FlatList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.gridContainer}
+          columnWrapperStyle={styles.row}
+          scrollEnabled={false}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -96,6 +151,14 @@ const styles = StyleSheet.create({
   // Results Header
   resultsHeader: { paddingHorizontal: 16, paddingVertical: 12 },
   resultsText: { color: '#8e8e93', fontSize: 14 },
+  loadingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: { color: '#8e8e93', fontSize: 14 },
   
   // Grid
   gridContainer: { paddingHorizontal: 16, paddingBottom: 20 },

@@ -1,105 +1,61 @@
-import * as React from 'react';
-import { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, Dimensions, TouchableOpacity, ScrollView, Pressable, Modal, Alert } from 'react-native';
-import { Image } from 'expo-image';
+import React, { useState, useCallback, useEffect } from 'react';
+import { StyleSheet, View, ScrollView, Alert, Text, Pressable, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '../../components/Header';
-import ImageWithPlaceholder from '../../components/ImageWithPlaceholder';
+import { HeroCarousel } from '../../components/home/HeroCarousel';
+import { RecentlyUpdated } from '../../components/home/RecentlyUpdated';
+import { FeaturedMovies } from '../../components/home/FeaturedMovies';
+import { TrendingMovies } from '../../components/home/TrendingMovies';
+import { NowWatching } from '../../components/home/NowWatching';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useOptimizedHomeData } from '../../hooks/useOptimizedHomeData';
+import { useFilterLogic } from '../../hooks/useFilterLogic';
+import { useSavedMovies } from '../../hooks/useSavedMovies';
+import { MediaItem, TabItem, FilterState } from '../../types/AppTypes';
+import { GRID_CONFIG, FILTER_DEFAULTS } from '../../constants/AppConstants';
+import { logger } from '../../utils/logger';
+import filmzoneApi from '../../services/filmzone-api';
 
-type Category = 'new' | 'movies' | 'shows' | 'genre';
-type Genre = 'All' | 'Movies' | 'TV Shows' | 'Action' | 'Comedy' | 'Drama' | 'Romance' | 'Thriller' | 'Mystery' | 'Fantasy' | 'Adventure' | 'Music';
-type Year = 'All' | '2024' | '2023' | '2022' | '2021' | '2020' | '2019' | '2018' | '2017' | '2016' | '2015' |'2014' | '2013' | '2012' | '2011' | '2010' | '2009' | '2008' | '2007' | '2006' | '2005' | '2004' | '2003' | '2002' | '2001' | '2000' | '1999' | '1998' | '1997' | '1996' | '1995' | '1994' | '1993' | '1992' | '1991' | '1990' | '1989' | '1988' | '1987' | '1986' | '1985' | '1984' | '1983' | '1982' | '1981' | '1980' | '1979' | '1978' | '1977' | '1976' | '1975' | '1974' | '1973' | '1972' | '1971' | '1970' | '1969' | '1968' | '1967' | '1966' | '1965' | '1964' | '1963' | '1962' | '1961' | '1960' | '1959' | '1958' | '1957' | '1956' | '1955' | '1954' | '1953' | '1952' | '1951' | '1950' | '1949' | '1948' | '1947' | '1946' | '1945' | '1944' | '1943' | '1942' | '1941' | '1940' | '1939' | '1938' | '1937' | '1936' | '1935' | '1934' | '1933' | '1932' | '1931' | '1930' | '1929' | '1928' | '1927' | '1926' | '1925' | '1924' | '1923' | '1922' | '1921' | '1920' | '1919' | '1918' | '1917' | '1916' | '1915' | '1914' | '1913' | '1912' | '1911' | '1910' | '1909' | '1908' | '1907' | '1906' | '1905' | '1904' | '1903' | '1902' | '1901' | '1900';
-type Studio = 'All' | 'Netflix' | 'Disney+' | 'HBO Max' | 'Amazon Prime' | 'Apple TV+' | 'Paramount+' | 'Hulu' | 'Peacock' | 'Showtime';
+// Types are now imported from AppTypes.ts
 
-type MediaItem = {
-  movieID: number;
-  slug: string;
-  title: string;
-  originalTitle?: string;
-  description?: string;
-  movieType: string; // movie | series
-  image: string;
-  status: string;
-  releaseDate?: string;
-  durationSeconds?: number;
-  totalSeasons?: number;
-  totalEpisodes?: number;
-  year?: number;
-  rated?: string;
-  popularity?: number;
-  regionID: number;
-  createdAt: string;
-  updatedAt: string;
-  // Navigation properties
-  region?: {
-    regionID: number;
-    regionName: string;
-  };
-  tags?: Array<{
-    tagID: number;
-    tagName: string;
-    tagDescription?: string;
-  }>;
-  // Legacy properties for compatibility
-  id?: string;
-  cover?: string;
-  categories?: string[];
-  rating?: string;
-  isSeries?: boolean;
-  episodes?: string;
-  season?: string;
-  studio?: string;
-};
-
-// Hero slides will be loaded from FilmZone backend
-// const heroSlides: any[] = [];
-
-// Movies will be loaded from FilmZone backend
-// const allItems: MediaItem[] = [];
-// const nowWatching: MediaItem[] = [];
 
 export default function HomeScreen() {
   const { authState } = useAuth();
   const { t } = useLanguage();
-  const width = Dimensions.get('window').width;
-
-  const gridColumns = width >= 1024 ? 3 : width >= 600 ? 2 : 2;
-
-  const [recentExpanded, setRecentExpanded] = useState(false);
-  const [recentTopY, setRecentTopY] = useState(0);
-  const scrollRef = useRef<ScrollView | null>(null);
-  const heroRef = useRef<FlatList | null>(null);
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<Category>('new');
-  const [selectedGenre, setSelectedGenre] = useState<Genre>('All');
-  const [selectedYear, setSelectedYear] = useState<Year>('All');
-  const [selectedStudio, setSelectedStudio] = useState<Studio>('All');
+  
+  // Custom hooks for data management
+  const { data: homeData, isLoading, error, refetch, refresh } = useOptimizedHomeData(authState.user?.userID);
+  const { 
+    filterState, 
+    tempFilterState,
+    updateFilter,
+    updateTempFilter,
+    resetFilters,
+    resetTempFilters,
+    applyTempFilters,
+    filteredItems,
+    hasActive
+  } = useFilterLogic(homeData?.allItems || []);
+  const { isSaved, toggleSaved } = useSavedMovies(authState.user?.userID);
+  
+  // Local state
+  const [activeCategory, setActiveCategory] = useState<'new' | 'genre'>('new');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [filterType, setFilterType] = useState<'genre' | 'year' | 'studio'>('genre');
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(true);
-  const [savedMovies, setSavedMovies] = useState<Set<number>>(new Set());
-  const [featuredMovies, setFeaturedMovies] = useState<MediaItem[]>([]);
-  const [trendingMovies, setTrendingMovies] = useState<MediaItem[]>([]);
-  
-  // Temporary filter states for the modal
-  const [tempSelectedGenre, setTempSelectedGenre] = useState<Genre>('All');
-  const [tempSelectedYear, setTempSelectedYear] = useState<Year>('All');
-  const [tempSelectedStudio, setTempSelectedStudio] = useState<Studio>('All');
+  const [customYearInput, setCustomYearInput] = useState('');
+  const [plans, setPlans] = useState<any[]>([]);
+  const [planPrices, setPlanPrices] = useState<Record<number, string>>({});
+  const [priceList, setPriceList] = useState<any[]>([]);
+  const [currentPlan, setCurrentPlan] = useState<any | null>(null);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [fetchedSubscription, setFetchedSubscription] = useState<any | null>(null);
 
-  // Initialize temporary filter states when modal opens
-  React.useEffect(() => {
-    if (showFilterModal) {
-      setTempSelectedGenre(selectedGenre);
-      setTempSelectedYear(selectedYear);
-      setTempSelectedStudio(selectedStudio);
-    }
-  }, [showFilterModal, selectedGenre, selectedYear, selectedStudio]);
-
-  const tabs: { key: Category; title: string }[] = useMemo(
+  // Memoized tabs
+  const tabs: TabItem[] = React.useMemo(
     () => [
       { key: 'new', title: t('home.new_items') },
       { key: 'genre', title: t('home.all_content') },
@@ -107,178 +63,11 @@ export default function HomeScreen() {
     [t]
   );
 
-  const [genres, setGenres] = useState<Genre[]>(['All', 'Movies', 'TV Shows', 'Action', 'Comedy', 'Drama', 'Romance', 'Thriller', 'Mystery', 'Fantasy', 'Adventure', 'Music']);
-  const years: Year[] = ['All', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010', '2009', '2008', '2007', '2006', '2005', '2004', '2003', '2002', '2001', '2000', '1999', '1998', '1997', '1996', '1995', '1994', '1993', '1992', '1991', '1990', '1989', '1988', '1987', '1986', '1985', '1984', '1983', '1982', '1981', '1980', '1979', '1978', '1977', '1976', '1975', '1974', '1973', '1972', '1971', '1970', '1969', '1968', '1967', '1966', '1965', '1964', '1963', '1962', '1961', '1960', '1959', '1958', '1957', '1956', '1955', '1954', '1953', '1952', '1951', '1950', '1949', '1948', '1947', '1946', '1945', '1944', '1943', '1942', '1941', '1940', '1939', '1938', '1937', '1936', '1935', '1934', '1933', '1932', '1931', '1930', '1929', '1928', '1927', '1926', '1925', '1924', '1923', '1922', '1921', '1920', '1919', '1918', '1917', '1916', '1915', '1914', '1913', '1912', '1911', '1910', '1909', '1908', '1907', '1906', '1905', '1904', '1903', '1902', '1901', '1900'];
-  const [studios, setStudios] = useState<Studio[]>(['All', 'Netflix', 'Disney+', 'HBO Max', 'Amazon Prime', 'Apple TV+', 'Paramount+', 'Hulu', 'Peacock', 'Showtime']);
-  const [tags, setTags] = useState<any[]>([]);
-  const [regions, setRegions] = useState<any[]>([]);
-  const [persons, setPersons] = useState<any[]>([]);
-  
-  // Data from backend
-  const [heroSlides, setHeroSlides] = useState<any[]>([]);
-  const [allItems, setAllItems] = useState<MediaItem[]>([]);
-  const [nowWatching, setNowWatching] = useState<MediaItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load data from Mock API (using sample data)
-  React.useEffect(() => {
-    const loadData = async () => {
-      try {
-        const { movieAppApi } = await import('../../services/mock-api');
-        
-        // Load metadata
-        const [tagsResponse, regionsResponse, personsResponse] = await Promise.all([
-          movieAppApi.getAllTags(),
-          movieAppApi.getAllRegions(),
-          movieAppApi.getAllPersons()
-        ]);
-        
-        if (tagsResponse.errorCode === 200 && tagsResponse.data) {
-          setTags(tagsResponse.data);
-          const tagNames = tagsResponse.data.map((tag: any) => tag.tagName);
-          setGenres(['All', 'Movies', 'TV Shows', ...tagNames]);
-        }
-
-        if (regionsResponse.errorCode === 200 && regionsResponse.data) {
-          setRegions(regionsResponse.data);
-          const regionNames = regionsResponse.data.map((region: any) => region.regionName);
-          setStudios(['All', ...regionNames]);
-        }
-
-        if (personsResponse.errorCode === 200 && personsResponse.data) {
-          setPersons(personsResponse.data);
-        }
-        
-        // Load movie data
-        // Load content data
-        const [heroResponse, moviesResponse, featuredResponse, trendingResponse] = await Promise.all([
-          movieAppApi.getNewReleaseMovies(),
-          movieAppApi.getMoviesMainScreen(),
-          movieAppApi.getFeaturedMovies(),
-          movieAppApi.getTrendingMovies()
-        ]);
-        
-        if (heroResponse.errorCode === 200 && heroResponse.data) {
-          setHeroSlides(heroResponse.data);
-        }
-        
-        if (moviesResponse.errorCode === 200 && moviesResponse.data) {
-          setAllItems(moviesResponse.data);
-        }
-        
-        if (featuredResponse.errorCode === 200 && featuredResponse.data) {
-          setFeaturedMovies(featuredResponse.data);
-        }
-        
-        if (trendingResponse.errorCode === 200 && trendingResponse.data) {
-          setTrendingMovies(trendingResponse.data);
-        }
-        
-        // Load watch progress for "Now Watching"
-        if (authState.user) {
-          try {
-            const progressResponse = await movieAppApi.getWatchProgress();
-        if (progressResponse.errorCode === 200 && progressResponse.data) {
-          setNowWatching(progressResponse.data as unknown as MediaItem[]);
-        }
-          } catch (error) {
-            console.error('Error loading watch progress:', error);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [authState.user]);
-
-  // Load saved movies
-  React.useEffect(() => {
-    const loadSavedMovies = async () => {
-      if (!authState.user) {
-        setSavedMovies(new Set());
-        return;
-      }
-      
-      try {
-        const { movieAppApi } = await import('../../services/mock-api');
-        const response = await movieAppApi.getSavedMovies();
-        if (response.errorCode === 200 && response.data) {
-          const savedIds = new Set<number>(response.data.map((movie: any) => movie.movieID));
-          setSavedMovies(savedIds);
-        }
-      } catch (error) {
-        console.error('Error loading saved movies:', error);
-      }
-    };
-    
-    loadSavedMovies();
-  }, [authState.user]);
-
-  // Load movies by category
-  const loadMoviesByCategory = async (categoryId: number) => {
+  // Event handlers
+  const handleHeroSlidePress = useCallback(async (slide: any) => {
     try {
-      const { movieAppApi } = await import('../../services/mock-api');
-      const response = await movieAppApi.getMoviesByCategory(categoryId);
-      if (response.errorCode === 200 && response.data) {
-        return response.data;
-      }
-      return [];
-    } catch (error) {
-      console.error('Error loading movies by category:', error);
-      return [];
-    }
-  };
-
-  const filteredItems = useMemo(() => {
-    let items = allItems;
-    
-    if (activeCategory === 'new') {
-      // Show all movies and series as "recently updated"
-      return allItems;
-    }
-    
-    if (activeCategory === 'genre') {
-      // Apply all filters together (combine them)
-      if (selectedGenre !== 'All') {
-        if (selectedGenre === 'Movies') {
-          items = items.filter(item => item.movieType === 'movie');
-        } else if (selectedGenre === 'TV Shows') {
-          items = items.filter(item => item.movieType === 'series');
-        } else {
-          // Filter by tag names
-          items = items.filter(item => 
-            item.categories?.includes(selectedGenre) || 
-            item.tags?.some(tag => tag.tagName === selectedGenre)
-          );
-        }
-      }
-      
-      if (selectedYear !== 'All') {
-        items = items.filter(item => item.year?.toString() === selectedYear);
-      }
-      
-      if (selectedStudio !== 'All') {
-        items = items.filter(item => 
-          item.studio === selectedStudio || 
-          item.region?.regionName === selectedStudio
-        );
-      }
-    }
-    
-    return items;
-  }, [activeCategory, selectedGenre, selectedYear, selectedStudio, allItems]);
-
-  const go404 = async () => {
-    try { await Haptics.selectionAsync(); } catch {}
-    router.push('/+not-found');
-  };
-
-  const openHeroDetails = async (slide: any) => {
-    try { await Haptics.selectionAsync(); } catch {}
+      await Haptics.selectionAsync();
     
     // Add movie to watch progress when clicked
     try {
@@ -289,337 +78,377 @@ export default function HomeScreen() {
         // Refresh now watching list
         const progressResponse = await movieAppApi.getWatchProgress();
         if (progressResponse.errorCode === 200 && progressResponse.data) {
-          setNowWatching(progressResponse.data as unknown as MediaItem[]);
+            // This will be handled by the useHomeData hook
+            refetch();
         }
       }
     } catch (error) {
-      console.log('Error adding to watch progress:', error);
+        logger.warn('Failed to add to watch progress', error);
     }
     
-    // Navigate directly to video player
-    router.push({ pathname: '/player/[id]', params: { id: slide.id, title: slide.title, type: slide.isSeries ? 'series' : 'movie' } });
-  };
-  const openDetails = async (m: MediaItem) => {
-    try { await Haptics.selectionAsync(); } catch {}
+    // Navigate to movie/series detail instead of player
+      const destinationPath = slide.isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+      router.push({
+        pathname: destinationPath,
+        params: {
+          id: slide.id,
+          title: slide.title,
+          cover: slide.bg,
+          rating: slide.rating,
+          description: slide.text,
+          categories: '',
+        }
+      });
+    } catch (error) {
+      logger.warn('Haptic feedback failed', error);
+    }
+  }, [refetch]);
+
+  const handleMoviePress = useCallback(async (movie: MediaItem) => {
+    try {
+      await Haptics.selectionAsync();
     
     // Add movie to watch progress when clicked
     try {
       const { movieAppApi } = await import('../../services/mock-api');
-      const response = await movieAppApi.addToWatchProgress(m.movieID);
+        const response = await movieAppApi.addToWatchProgress(movie.movieID);
       
       if (response.success) {
         // Update watch progress with current position
-        await movieAppApi.updateWatchProgress(m.movieID, 0, 0);
+          await movieAppApi.updateWatchProgress(movie.movieID, 0, 0);
         
         // Refresh now watching list
-        const progressResponse = await movieAppApi.getWatchProgress();
-        if (progressResponse.errorCode === 200 && progressResponse.data) {
-          setNowWatching(progressResponse.data as unknown as MediaItem[]);
-        }
+          refetch();
       }
     } catch (error) {
-      console.log('Error adding to watch progress:', error);
+        logger.warn('Failed to add to watch progress', error);
     }
     
-    const isSeries = typeof m.isSeries === 'boolean' ? m.isSeries : m.movieType === 'series';
+      const isSeries = typeof movie.isSeries === 'boolean' ? movie.isSeries : movie.movieType === 'series';
     const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+      
     // Add mock metadata for demo items
-    const baseParams: any = { id: m.id || m.movieID.toString(), title: m.title, cover: (m as any).cover?.uri ?? m.image, categories: m.categories?.join(' • ') || '', rating: m.rating || m.popularity?.toString() || '0' };
-    if (m.id === 'x1') {
-      Object.assign(baseParams, { year: '2024', duration: '126 min', country: 'USA', cast: 'A. Johnson, M. Rivera', description: 'Một thám tử trở về quê nhà điều tra chuỗi vụ án liên quan đến quá khứ của chính mình.' });
+      const baseParams: any = { 
+        id: movie.id || movie.movieID.toString(), 
+        title: movie.title, 
+        cover: (movie as any).cover?.uri ?? movie.image, 
+        categories: movie.categories?.join(' • ') || '', 
+        rating: movie.rating || movie.popularity?.toString() || '0' 
+      };
+      
+      if (movie.id === 'x1') {
+        Object.assign(baseParams, { 
+          year: '2024', 
+          duration: '126 min', 
+          country: 'USA', 
+          cast: 'A. Johnson, M. Rivera', 
+          description: 'Một thám tử trở về quê nhà điều tra chuỗi vụ án liên quan đến quá khứ của chính mình.' 
+        });
+      }
+      if (movie.id === 'x2') {
+        Object.assign(baseParams, { 
+          year: '2025', 
+          duration: 'Season 1', 
+          country: 'UK', 
+          cast: 'L. Bennett, K. Ito', 
+          description: 'Một vương quốc bị lãng quên vang vọng những bí ẩn cổ xưa, nhóm thám hiểm trẻ bắt đầu hành trình tìm lại nguồn gốc.', 
+          episodes: '1|2|3|4|5' 
+        });
+      }
+      
+      router.push({ pathname, params: baseParams });
+    } catch (error) {
+      logger.warn('Haptic feedback failed', error);
     }
-    if (m.id === 'x2') {
-      Object.assign(baseParams, { year: '2025', duration: 'Season 1', country: 'UK', cast: 'L. Bennett, K. Ito', description: 'Một vương quốc bị lãng quên vang vọng những bí ẩn cổ xưa, nhóm thám hiểm trẻ bắt đầu hành trình tìm lại nguồn gốc.', episodes: '1|2|3|4|5' });
+  }, [refetch]);
+
+  const handleCategoryChange = useCallback((category: string) => {
+    if (category === 'genre') {
+                  // Check if user is logged in before allowing filter access
+                  if (!authState.user) {
+                    Alert.alert(
+                      t('filter.signin_required_title'),
+                      t('filter.signin_required_message'),
+                      [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        { text: t('common.signin'), onPress: () => {
+              setShowFilterModal(false);
+                          router.push('/auth/signin');
+                        }}
+                      ]
+                    );
+                    return;
+                  }
+                  
+                  // Initialize temp values with current selected values
+      resetTempFilters();
+      setCustomYearInput(filterState.selectedYear !== FILTER_DEFAULTS.YEAR && !['2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015'].includes(filterState.selectedYear) ? filterState.selectedYear : '');
+                  setShowFilterModal(true);
+                  setActiveCategory('genre');
+                } else {
+      setActiveCategory(category as 'new' | 'genre');
     }
-    router.push({ pathname, params: baseParams });
+  }, [authState.user, t, filterState.selectedYear, resetTempFilters]);
+
+  const handleFilterPress = useCallback(() => {
+    setShowFilterModal(true);
+  }, []);
+
+  // Get items to display based on active category
+  const displayItems = activeCategory === 'new' ? (homeData?.allItems || []) : filteredItems;
+
+  // Helpers for plans
+  const getPlanId = (plan: any) => plan?.planID ?? plan?.planId ?? plan?.id;
+  const getPriceId = (plan: any, sub?: any) =>
+    sub?.priceID ?? sub?.priceId ?? plan?.priceID ?? plan?.priceId;
+  const formatPrice = (price: any) => {
+    if (!price) return 'N/A';
+    if (price.amount !== undefined) {
+      const amountNum = Number(price.amount);
+      if (!isNaN(amountNum) && amountNum === 0) return 'Free';
+      const currency = price.currency || '';
+      return `${price.amount} ${currency}`.trim();
+    }
+    return price.toString();
   };
 
-  const handleMovieBoxToggle = async (item: MediaItem) => {
-    try {
-      await Haptics.selectionAsync();
-      
-      if (!authState.user) {
-        Alert.alert('Login Required', 'Please login to save movies to your list');
-        return;
+  // Load plans based on subscription status
+  useEffect(() => {
+    const loadPlans = async () => {
+      setPlansLoading(true);
+      try {
+        // Ưu tiên lấy subscription mới nhất từ backend theo userID
+        const userId = authState.user?.userID;
+        let apiSubscription: any = null;
+        if (userId) {
+          try {
+            const subsRes = await filmzoneApi.getSubscriptionsByUser(userId);
+            const subsOk =
+              (subsRes as any).success === true ||
+              (subsRes.errorCode >= 200 && subsRes.errorCode < 300);
+            if (subsOk && subsRes.data) {
+              const subsArr = Array.isArray(subsRes.data) ? subsRes.data : [subsRes.data];
+              if (subsArr.length > 0) {
+                apiSubscription = subsArr
+                  .filter((s: any) => s)
+                  .sort((a: any, b: any) => {
+                    const aId = Number(a.subscriptionID ?? a.subscriptionId ?? 0);
+                    const bId = Number(b.subscriptionID ?? b.subscriptionId ?? 0);
+                    return bId - aId;
+                  })[0];
+              }
+            }
+          } catch (err) {
+            logger.warn('Home: getSubscriptionsByUser failed', err);
+          }
+        }
+
+        // Nếu backend không trả về subscription, fallback về authState
+        const sub = apiSubscription || authState.user?.subscription || null;
+        setFetchedSubscription(sub);
+        let subPlanId = (sub as any)?.planID ?? (sub as any)?.planId;
+        let pricesData: any[] = [];
+
+        // Load all prices once
+        try {
+          const pricesRes = await filmzoneApi.getAllPrices();
+          const pricesOk = (pricesRes as any).success === true || (pricesRes.errorCode >= 200 && pricesRes.errorCode < 300);
+          pricesData = pricesOk && pricesRes.data ? pricesRes.data : [];
+          setPriceList(pricesData);
+        } catch {
+          pricesData = [];
+          setPriceList([]);
+        }
+
+        // Nếu không có planID nhưng có priceID, cố gắng suy ra planID từ price
+        if (sub && !subPlanId && ((sub as any)?.priceID ?? (sub as any)?.priceId)) {
+          const subPriceId = (sub as any)?.priceID ?? (sub as any)?.priceId;
+          try {
+            const priceRes = await filmzoneApi.getPriceById(Number(subPriceId));
+            const priceOk = (priceRes as any).success === true || (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+            if (priceOk && priceRes.data) {
+              subPlanId = priceRes.data.planID ?? priceRes.data.planId ?? subPlanId;
+            }
+          } catch {}
+        }
+
+        if (sub && subPlanId) {
+          // Fetch current plan
+          const planRes = await filmzoneApi.getPlanById(subPlanId);
+          const planOk = (planRes as any).success === true || (planRes.errorCode >= 200 && planRes.errorCode < 300);
+          if (planOk && planRes.data && planRes.data.isActive !== false) {
+            setCurrentPlan(planRes.data);
+            // prefer priceId if present, else try match from priceList by planId
+            const priceId = getPriceId(planRes.data, sub);
+            let priceLabel: string | undefined;
+            if (priceId) {
+              const priceRes = await filmzoneApi.getPriceById(priceId);
+              const priceOk = (priceRes as any).success === true || (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+              if (priceOk && priceRes.data) {
+                priceLabel = formatPrice(priceRes.data);
+              }
+            }
+            if (!priceLabel && pricesData.length) {
+              const matched = pricesData.find((p: any) => String(p.planID ?? p.planId) === String(subPlanId));
+              if (matched) {
+                priceLabel = formatPrice(matched);
+              }
+            }
+            if (priceLabel) {
+              setPlanPrices(prev => ({ ...prev, [subPlanId]: priceLabel! }));
+            }
+          } else {
+            setCurrentPlan(null);
+          }
+        } else {
+          // Fetch all plans
+          const plansRes = await filmzoneApi.getAllPlans();
+          const plansOk = (plansRes as any).success === true || (plansRes.errorCode >= 200 && plansRes.errorCode < 300);
+          if (plansOk && plansRes.data) {
+            const activePlans = (plansRes.data || []).filter((p: any) => p.isActive !== false);
+            setPlans(activePlans);
+
+            // Fetch prices for each plan (best-effort)
+            const priceEntries = await Promise.all(
+              activePlans.map(async (p: any) => {
+                const pid = getPlanId(p);
+                const priceId = getPriceId(p);
+                // 1) try priceId if available
+                if (pid && priceId) {
+                  const priceRes = await filmzoneApi.getPriceById(priceId);
+                  const priceOk = (priceRes as any).success === true || (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+                  if (priceOk && priceRes.data) {
+                    return [pid, formatPrice(priceRes.data)] as const;
+                  }
+                }
+                // 2) fallback: match from priceList by planID
+                if (pid && pricesData.length) {
+                  const matched = pricesData.find((pr: any) => String(pr.planID ?? pr.planId) === String(pid));
+                  if (matched) {
+                    return [pid, formatPrice(matched)] as const;
+                  }
+                }
+                return null;
+              })
+            );
+
+            const map: Record<number, string> = {};
+            priceEntries.forEach(entry => {
+              if (entry) {
+                const [pid, priceLabel] = entry;
+                map[pid] = priceLabel;
+              }
+            });
+            setPlanPrices(map);
+          } else {
+            setPlans([]);
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to load plans', error);
+        setPlans([]);
+        setCurrentPlan(null);
+      } finally {
+        setPlansLoading(false);
       }
-      
-      const { movieAppApi } = await import('../../services/mock-api');
-      
-      // Check if movie is already saved
-      const savedResponse = await movieAppApi.getSavedMovies();
-      const isSaved = savedResponse.data?.some((saved: any) => saved.movieID === item.movieID);
-      
-      if (isSaved) {
-        // Remove from saved movies
-        await movieAppApi.removeFromSavedMovies(item.movieID);
-        setSavedMovies(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(item.movieID);
-          return newSet;
-        });
-        Alert.alert('Success', 'Movie removed from your list');
-      } else {
-        // Add to saved movies
-        await movieAppApi.addToSavedMovies(item.movieID);
-        setSavedMovies(prev => new Set([...prev, item.movieID]));
-        Alert.alert('Success', 'Movie added to your list');
-      }
-    } catch (error) {
-      console.log('Error toggling MovieBox:', error);
-      Alert.alert('Error', 'Failed to update your movie list');
-    }
-  };
+    };
+
+    loadPlans();
+  }, [authState.user]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <Header />
+        <ScrollView style={styles.scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.pagePad}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </ScrollView>
+                </View>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Header />
+        <ScrollView style={styles.scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.pagePad}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Show empty state
+  if (!homeData) {
+    return (
+      <View style={styles.container}>
+        <Header />
+        <ScrollView style={styles.scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.pagePad}>
+          <Text style={styles.emptyText}>No data available</Text>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Header />
-      <ScrollView ref={scrollRef} style={styles.scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.pagePad}>
-        {/* Hero carousel (horizontal) */}
-        <View style={styles.heroWrap}>
-      <FlatList
-        data={heroSlides}
-        keyExtractor={(i) => i.id}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-          style={{ height: 200 }}
-          ref={heroRef}
-          onScroll={(e) => {
-            const x = e.nativeEvent.contentOffset.x;
-            const idx = Math.round(x / width);
-            if (idx !== heroIndex) setHeroIndex(idx);
-          }}
-          scrollEventThrottle={16}
-        renderItem={({ item }) => (
-          <View style={styles.heroSlide}>
-            <Image source={item.bg} style={styles.heroBg} contentFit="cover" />
-            <View style={styles.heroOverlay} />
-            <View style={styles.heroContent}>
-              <Text style={styles.heroTitle}>{item.title} <Text style={styles.heroSub}> {item.rating}</Text></Text>
-              <Text numberOfLines={3} style={styles.heroText}>{item.text}</Text>
-                <Pressable onPress={() => openHeroDetails(item)} style={({ pressed }) => [styles.primaryBtn, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]}>
-                <Text style={styles.primaryBtnText}>{t('home.watch_now')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-      />
-        {/* Splide-like pagination */}
-        <View style={styles.pagerWrap} pointerEvents="box-none">
-          <View style={styles.pagerRow}>
-            {heroSlides.map((_, i) => (
-              <Pressable
-                key={i}
-                onPress={() => heroRef.current?.scrollToIndex({ index: i, animated: true })}
-                style={({ pressed }) => [styles.pagerDot, i === heroIndex && styles.pagerDotActive, pressed && { opacity: 0.8 }]}
-              />
-            ))}
-          </View>
-        </View>
-      </View>
+      <ScrollView style={styles.scrollView} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.pagePad}>
+        {/* Hero carousel */}
+        <HeroCarousel 
+          slides={homeData.heroSlides} 
+          onSlidePress={handleHeroSlidePress} 
+        />
 
-      {/* Subscription Status Banner */}
-      {authState.isAuthenticated && showWelcomeBanner && (
-        <View style={styles.subscriptionBanner}>
-          <Text style={styles.subscriptionBannerText}>
-            Welcome to FilmZone!
-          </Text>
-          <Pressable 
-            style={styles.closeButton}
-            onPress={() => setShowWelcomeBanner(false)}
-          >
-            <Ionicons name="close" size={20} color="#fff" />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Featured Movies */}
-      {featuredMovies.length > 0 && (
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Featured Movies</Text>
-          <FlatList
-            data={featuredMovies}
-            keyExtractor={(item) => item.movieID.toString()}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16 }}
-            ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
-            renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [styles.featuredCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}
-                onPress={() => openDetails(item)}
-              >
-                <View style={styles.featuredImageContainer}>
-                  <ImageWithPlaceholder source={{ uri: item.image }} style={styles.featuredImage} showRedBorder={false} />
-                  <View style={styles.featuredOverlay}>
-                    <View style={styles.featuredBadge}>
-                      <Text style={styles.featuredBadgeText}>FEATURED</Text>
-                    </View>
-                    <View style={styles.featuredRating}>
-                      <Ionicons name="star" size={12} color="#ffd166" />
-                      <Text style={styles.featuredRatingText}>{item.popularity?.toFixed(1) || '8.0'}</Text>
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.featuredContent}>
-                  <Text style={styles.featuredTitle} numberOfLines={2}>{item.title}</Text>
-                  <Text style={styles.featuredYear}>{item.year || '2024'}</Text>
-                  <Text style={styles.featuredGenre} numberOfLines={1}>
-                    {item.tags?.map(tag => tag.tagName).join(' • ') || item.categories?.join(' • ') || 'Action'}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
-          />
-        </View>
-      )}
-
-      {/* Trending Movies */}
-      {trendingMovies.length > 0 && (
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Trending Now</Text>
-          <FlatList
-            data={trendingMovies}
-            keyExtractor={(item) => item.movieID.toString()}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16 }}
-            ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
-            renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [styles.trendingCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}
-                onPress={() => openDetails(item)}
-              >
-                <View style={styles.trendingImageContainer}>
-                  <ImageWithPlaceholder source={{ uri: item.image }} style={styles.trendingImage} showRedBorder={false} />
-                  <View style={styles.trendingOverlay}>
-                    <View style={styles.trendingBadge}>
-                      <Ionicons name="trending-up" size={12} color="#e50914" />
-                      <Text style={styles.trendingBadgeText}>TRENDING</Text>
-                    </View>
-                    <View style={styles.trendingRating}>
-                      <Ionicons name="star" size={12} color="#ffd166" />
-                      <Text style={styles.trendingRatingText}>{item.popularity?.toFixed(1) || '8.0'}</Text>
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.trendingContent}>
-                  <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
-                  <Text style={styles.trendingYear}>{item.year || '2024'}</Text>
-                  <Text style={styles.trendingGenre} numberOfLines={1}>
-                    {item.tags?.map(tag => tag.tagName).join(' • ') || item.categories?.join(' • ') || 'Action'}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
-          />
-        </View>
-      )}
-
-      {/* Recently Updated */}
-      <View onLayout={(e) => setRecentTopY(e.nativeEvent.layout.y)}>
-      <Text style={styles.sectionTitle}>{t('home.recently_updated')}</Text>
-
-        {/* Tabs header */}
-      <View style={styles.tabsRow}>
-        {tabs.map((t, idx) => (
-            <TouchableOpacity 
-              key={t.key} 
-              style={[styles.tabBtn, activeCategory === t.key && styles.tabBtnActive]}
-              onPress={() => {
-                if (t.key === 'genre') {
-                  // Initialize temp values with current selected values
-                  setTempSelectedGenre(selectedGenre);
-                  setTempSelectedYear(selectedYear);
-                  setTempSelectedStudio(selectedStudio);
-                  setShowFilterModal(true);
-                  // Also set active category to genre to show filtered content
-                  setActiveCategory('genre');
-                } else {
-                  setActiveCategory(t.key);
-                }
-              }}
-            >
-              <Text style={[styles.tabText, activeCategory === t.key && styles.tabTextActive]}>{t.title}</Text>
-              {t.key === 'genre' && (selectedGenre !== 'All' || selectedYear !== 'All' || selectedStudio !== 'All') && (
-                <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>!</Text>
-                </View>
-              )}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-
-        {/* Content based on active category */}
-      {!recentExpanded ? (
-        <>
-            <FlatList
-              data={filteredItems.slice(0, 4)}
-              keyExtractor={(i) => i.id || i.movieID.toString()}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16 }}
-            ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
-            renderItem={({ item }) => (
-              <Pressable onPress={() => openDetails(item as any)} style={({ pressed }) => [styles.recentCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
-                <ImageWithPlaceholder source={item.cover || item.image} style={styles.recentCover} showRedBorder={false} />
-                <Text numberOfLines={1} style={styles.recentTitle}>{item.title}</Text>
-                <Text numberOfLines={1} style={styles.recentCats}>{item.categories?.join(' • ') || ''}</Text>
-                {item.isSeries && item.totalSeasons && (
-                  <Text numberOfLines={1} style={styles.recentEpisodes}>{item.totalSeasons} {t('details.seasons').toLowerCase()}</Text>
-                )}
-                <Text style={styles.recentRate}>{item.rating || item.popularity?.toString()}</Text>
-              </Pressable>
-            )}
-          />
-          <Pressable onPress={() => setRecentExpanded(true)} style={({ pressed }) => [styles.loadMoreBtn, pressed && styles.loadMoreBtnPressed]}>
-            <Text style={styles.loadMoreText}>{t('home.expand')}</Text>
-          </Pressable>
-        </>
-      ) : (
-        <>
-        <View style={styles.grid}> 
-              {filteredItems.map((m) => (
-               <Pressable key={m.id || m.movieID} onPress={() => openDetails(m as any)} style={({ pressed }) => [styles.card, { width: (width - 32 - (gridColumns - 1) * 16) / gridColumns }, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}> 
-            <View style={styles.coverWrap}>
-                  <ImageWithPlaceholder source={m.cover || m.image} style={styles.cover} showRedBorder={false} />
+        {/* Subscription Status Banner */}
+        {authState.isAuthenticated && showWelcomeBanner && (
+          <View style={styles.subscriptionBanner}>
+            <Text style={styles.subscriptionBannerText}>
+              Welcome to FilmZone!
+            </Text>
                   <Pressable
-                    style={styles.bookmarkButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleMovieBoxToggle(m);
-                    }}
-                  >
-                    <Ionicons 
-                      name={savedMovies.has(m.movieID) ? "bookmark" : "bookmark-outline"} 
-                      size={20} 
-                      color={savedMovies.has(m.movieID) ? "#e50914" : "#fff"} 
-                    />
+              style={styles.closeButton}
+              onPress={() => setShowWelcomeBanner(false)}
+            >
+              <Ionicons name="close" size={20} color="#fff" />
                   </Pressable>
             </View>
-            <View style={styles.cardBody}>
-              <Text numberOfLines={1} style={styles.cardTitle}>{m.title}</Text>
-              <Text numberOfLines={1} style={styles.cardCategories}>{m.categories?.join(' • ') || ''}</Text>
-              {m.isSeries && m.totalSeasons && (
-                <Text numberOfLines={1} style={styles.cardEpisodes}>{m.totalSeasons} {t('details.seasons').toLowerCase()}</Text>
-              )}
-              <View style={styles.cardMetaRow}>
-                <Text style={styles.cardRate}>{m.rating || m.popularity?.toString()}</Text>
-                <Text style={styles.cardBadges}>HD • 16+</Text>
-              </View>
-            </View>
-          </Pressable>
-        ))}
-      </View>
-          <Pressable onPress={() => { scrollRef.current?.scrollTo({ y: recentTopY, animated: true }); setRecentExpanded(false); }} style={({ pressed }) => [styles.loadMoreBtn, pressed && styles.loadMoreBtnPressed]}>
-            <Text style={styles.loadMoreText}>{t('home.collapse')}</Text>
-          </Pressable>
-        </>
-      )}
-      </View>
+        )}
 
-      {/* Filter Modal */}
+        {/* Recently Updated Section */}
+        <RecentlyUpdated
+          items={displayItems}
+          tabs={tabs}
+          activeCategory={activeCategory}
+          onCategoryChange={handleCategoryChange}
+          onItemPress={handleMoviePress}
+          onFilterPress={handleFilterPress}
+          hasActiveFilters={hasActive}
+          t={t}
+        />
+
+      {/* Featured Movies */}
+        <FeaturedMovies 
+          movies={homeData.featuredMovies} 
+          onMoviePress={handleMoviePress} 
+        />
+
+      {/* Trending Movies */}
+        <TrendingMovies 
+          movies={homeData.trendingMovies} 
+          onMoviePress={handleMoviePress} 
+        />
+
+        {/* Now Watching */}
+        <NowWatching 
+          movies={homeData.nowWatching} 
+          onMoviePress={handleMoviePress} 
+          t={t}
+        />
+
+      {/* Filter Modal - Simplified */}
       <Modal visible={showFilterModal} transparent animationType="fade" onRequestClose={() => setShowFilterModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -647,146 +476,103 @@ export default function HomeScreen() {
               </Pressable>
             </View>
 
-            {/* Filter Options - Scrollable */}
-            <ScrollView style={styles.filterScrollView} showsVerticalScrollIndicator={true}>
-              {filterType === 'genre' && genres.map((genre) => (
-                <Pressable
-                  key={genre}
-                  style={({ pressed }) => [styles.filterItem, pressed && { opacity: 0.7 }]}
-                  onPress={() => setTempSelectedGenre(genre)}
-                >
-                  <Text style={[styles.filterText, tempSelectedGenre === genre && styles.filterTextActive]}>{genre}</Text>
-                </Pressable>
-              ))}
-              
-              {filterType === 'year' && years.map((year) => (
-                <Pressable
-                  key={year}
-                  style={({ pressed }) => [styles.filterItem, pressed && { opacity: 0.7 }]}
-                  onPress={() => setTempSelectedYear(year)}
-                >
-                  <Text style={[styles.filterText, tempSelectedYear === year && styles.filterTextActive]}>{year}</Text>
-                </Pressable>
-              ))}
-              
-              {filterType === 'studio' && studios.map((studio) => (
-                <Pressable
-                  key={studio}
-                  style={({ pressed }) => [styles.filterItem, pressed && { opacity: 0.7 }]}
-                  onPress={() => setTempSelectedStudio(studio)}
-                >
-                  <Text style={[styles.filterText, tempSelectedStudio === studio && styles.filterTextActive]}>{studio}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            
-            <View style={styles.modalButtonRow}>
-              <Pressable
-                style={({ pressed }) => [styles.modalResetBtn, pressed && { opacity: 0.7 }]}
-                onPress={() => {
-                  setTempSelectedGenre('All');
-                  setTempSelectedYear('All');
-                  setTempSelectedStudio('All');
-                }}
+            {/* Simple Filter Options */}
+            <View style={styles.simpleFilterContainer}>
+              <Text style={styles.simpleFilterText}>
+                Filter functionality will be implemented in the next version.
+                      </Text>
+                   </View>
+            {/* Action Buttons */}
+            <View style={styles.modalActions}>
+                    <Pressable
+                style={({ pressed }) => [styles.modalBtn, styles.modalBtnSecondary, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowFilterModal(false)}
               >
-                <Text style={styles.modalResetText}>{t('filter.reset')}</Text>
-              </Pressable>
-              
+                <Text style={styles.modalBtnSecondaryText}>{t('common.cancel')}</Text>
+                    </Pressable>
               <Pressable
-                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.7 }]}
-                onPress={() => {
-                  // Apply the temporary filters to the actual filters
-                  setSelectedGenre(tempSelectedGenre);
-                  setSelectedYear(tempSelectedYear);
-                  setSelectedStudio(tempSelectedStudio);
-                  setShowFilterModal(false);
-                }}
+                style={({ pressed }) => [styles.modalBtn, styles.modalBtnPrimary, pressed && { opacity: 0.7 }]}
+                onPress={() => setShowFilterModal(false)}
               >
-                <Text style={styles.modalCloseText}>{t('filter.apply')}</Text>
+                <Text style={styles.modalBtnPrimaryText}>{t('common.close')}</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Now Watching carousel */}
-      <Text style={styles.sectionTitle}>{t('home.now_watching')}</Text>
-        <FlatList
-          data={nowWatching}
-          keyExtractor={(i) => i.id || i.movieID.toString()}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
-        ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
-        renderItem={({ item }) => (
-          <Pressable onPress={() => openDetails(item as any)} style={({ pressed }) => [styles.nowCard, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
-            <ImageWithPlaceholder source={item.cover || item.image} style={styles.nowCover} showRedBorder={false} />
-            <Text numberOfLines={1} style={styles.nowTitle}>{item.title}</Text>
-            <Text numberOfLines={1} style={styles.nowCats}>{item.categories?.join(' • ') || ''}</Text>
-            {item.isSeries && item.episodes && (
-              <Text numberOfLines={1} style={styles.nowEpisodes}>{item.season} • {item.episodes} tập</Text>
-            )}
-            <Text style={styles.nowRate}>{item.rating || item.popularity?.toString()}</Text>
-          </Pressable>
-        )}
-      />
 
       {/* Plans */}
       <View style={styles.plansSection}>
         <Text style={styles.sectionTitle}>
-          {authState.user?.subscription ? t('home.your_current_plan') : t('home.select_plan')}
+          {(fetchedSubscription || authState.user?.subscription) ? t('home.your_current_plan') : t('plan.choose_plan')}
         </Text>
+        {/** Derived current plan for display on home */}
+        {(() => {
+          const userHasSubscription = !!(fetchedSubscription || authState.user?.subscription);
+          const starterPlan = plans.find((p: any) => (p.code || p.name || '').toLowerCase() === 'starter');
+          const fallbackPlan = starterPlan || (plans.length > 0 ? plans[0] : null);
+          const effectiveCurrentPlan = userHasSubscription && currentPlan ? currentPlan : fallbackPlan;
+          const effectivePlanId = effectiveCurrentPlan ? getPlanId(effectiveCurrentPlan) ?? -1 : -1;
+          const effectivePrice = effectivePlanId !== -1 ? (planPrices[effectivePlanId] || 'N/A') : t('plan.free');
+          const effectiveCta = userHasSubscription ? t('plan.manage_plan') : t('plan.choose_plan');
+          const effectiveFeatures = effectiveCurrentPlan
+            ? [effectiveCurrentPlan.description || effectiveCta]
+            : [effectiveCta];
+
+          return (
         <View style={styles.plansRow}>
-          {authState.user?.subscription ? (
-            // Show current plan only
-            <Plan 
-              title={authState.user.subscription.plan === 'premium' ? t('plan.premium') : 
-                     authState.user.subscription.plan === 'cinematic' ? t('plan.cinematic') : t('plan.starter')} 
-              price={authState.user.subscription.plan === 'premium' ? '$19.99' : 
-                     authState.user.subscription.plan === 'cinematic' ? '$39.99' : t('plan.free')} 
-              features={authState.user.subscription.plan === 'premium' ? 
-                ["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"] :
-                authState.user.subscription.plan === 'cinematic' ?
-                ["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"] :
-                ["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
-              cta={t('plan.manage_plan')} 
-              highlight={authState.user.subscription.plan !== 'starter'}
-              onPress={() => router.push('/profile')} 
+          {plansLoading ? (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator color="#e50914" size="small" />
+              <Text style={{ color: '#fff' }}>{t('common.loading') || 'Loading...'}</Text>
+            </View>
+          ) : userHasSubscription && effectiveCurrentPlan ? (
+            // Đã có subscription: hiển thị plan hiện tại
+            <Plan
+              title={effectiveCurrentPlan.name || effectiveCurrentPlan.code || `Plan ${getPlanId(effectiveCurrentPlan) ?? ''}`}
+              price={effectivePrice}
+              features={effectiveFeatures}
+              cta={effectiveCta}
+              highlight
+              onPress={() => router.push('/profile')}
               t={t}
             />
           ) : (
-            // Show all plans for selection
+            // Chưa có subscription: hiển thị tất cả plan khả dụng (thường là 3 plan)
             <>
-              <Plan 
-                title={t('plan.starter')} 
-                price={t('plan.free')} 
-                features={["7 days","720p Resolution","Limited Availability","Desktop Only","Limited Support"]} 
-                cta={t('plan.choose_plan')} 
-                highlight={false}
-                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-                t={t}
-              />
-              <Plan 
-                title={t('plan.premium')} 
-                price="$19.99" 
-                features={["1 Month","Full HD","Lifetime Availability","TV & Desktop","24/7 Support"]} 
-                cta={t('plan.choose_plan')} 
-                highlight={true}
-                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-                t={t}
-              />
-              <Plan 
-                title={t('plan.cinematic')} 
-                price="$39.99" 
-                features={["2 Months","Ultra HD","Lifetime Availability","Any Device","24/7 Support"]} 
-                cta={t('plan.choose_plan')} 
-                highlight={false}
-                onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
-                t={t}
-              />
+              {(plans && plans.length > 0 ? plans : []).map((p: any, idx: number) => {
+                const pid = getPlanId(p);
+                const priceLabel = pid ? (planPrices[pid] || t('plan.free')) : t('plan.free');
+                return (
+                  <Plan
+                    key={pid ?? idx}
+                    title={p.name || p.code || `Plan ${pid ?? idx}`}
+                    price={priceLabel}
+                    features={[p.description || t('plan.choose_plan')]}
+                    cta={t('plan.choose_plan')}
+                    highlight={false}
+                    onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')}
+                    t={t}
+                  />
+                );
+              })}
+              {(!plans || plans.length === 0) && (
+                <Plan 
+                  title={t('plan.starter')} 
+                  price={t('plan.free')} 
+                  features={[t('plan.choose_plan')]} 
+                  cta={t('plan.choose_plan')} 
+                  highlight={false}
+                  onPress={() => authState.isAuthenticated ? router.push('/profile') : router.push('/auth/signin')} 
+                  t={t}
+                />
+              )}
             </>
           )}
         </View>
+          );
+        })()}
       </View>
 
       {/* Partners (static) */}
@@ -794,12 +580,13 @@ export default function HomeScreen() {
       <Text style={styles.sectionText}>{t('home.partners_description')}</Text>
       <View style={styles.partnersRow}>
         {Array.from({ length: 6 }, (_, i) => (
-          <Pressable key={i} onPress={go404} style={({ pressed }) => [styles.partnerBox, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
+          <Pressable key={i} onPress={() => {}} style={({ pressed }) => [styles.partnerBox, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
             <Text style={styles.partnerText}>Partner {i + 1}</Text>
           </Pressable>
-        ))}
+        )        )}
       </View>
     </ScrollView>
+
     </View>
   );
 }
@@ -807,11 +594,6 @@ export default function HomeScreen() {
 function Plan({ title, price, features, cta, highlight, onPress, t }: { title: string; price: string; features: string[]; cta: string; highlight?: boolean; onPress?: () => void; t: (key: string) => string }) {
   return (
     <View style={[styles.planCard, highlight && styles.planCardHighlight]}>
-      {highlight && (
-        <View style={styles.planBadge}>
-          <Text style={styles.planBadgeText}>POPULAR</Text>
-        </View>
-      )}
       <View style={styles.planHeader}>
         <Text style={[styles.planTitle, highlight && styles.planTitleHighlight]}>{title}</Text>
         <Text style={[styles.planPrice, highlight && styles.planPriceHighlight]}>{price}</Text>
@@ -846,22 +628,70 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#2b2b31' },
   scrollView: { flex: 1 },
   pagePad: { paddingTop: 70 }, // Updated: 100px (top) + 60px (header height) = 160px
-  heroSlide: { width: Dimensions.get('window').width, height: 200, borderRadius: 12, overflow: 'hidden' },
-  heroWrap: { position: 'relative' },
-  heroBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
-  heroOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
-  heroContent: { position: 'absolute', left: 12, right: 12, bottom: 12 },
-  heroTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  heroSub: { color: '#ffd166', fontSize: 14, fontWeight: '700' },
-  heroText: { color: '#d1d1d6', marginTop: 6, fontSize: 12 },
-  primaryBtn: { backgroundColor: '#e50914', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start', marginTop: 10 },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  
+  // Loading and error states
+  loadingText: { 
+    color: '#fff', 
+    textAlign: 'center', 
+    marginTop: 50, 
+    fontSize: 16 
+  },
+  errorText: { 
+    color: '#e50914', 
+    textAlign: 'center', 
+    marginTop: 50, 
+    fontSize: 16 
+  },
+  emptyText: { 
+    color: '#8e8e93', 
+    textAlign: 'center', 
+    marginTop: 50, 
+    fontSize: 16 
+  },
+  
+  // Simple filter modal
+  simpleFilterContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  simpleFilterText: {
+    color: '#8e8e93',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  
+  // Modal styles
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 20,
+    gap: 12,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalBtnSecondary: {
+    backgroundColor: '#2b2b31',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  modalBtnPrimary: {
+    backgroundColor: '#e50914',
+  },
+  modalBtnSecondaryText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  modalBtnPrimaryText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 
-  pagerWrap: { position: 'absolute', bottom: 12, right: 12, alignItems: 'flex-end' },
-  pagerRow: { flexDirection: 'row' },
-  pagerDot: { width: 14, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.7)', marginHorizontal: 3 },
-  pagerDotActive: { backgroundColor: '#e50914' },
-  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginHorizontal: 16, marginBottom: 10 },
+  sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginHorizontal: 16, marginBottom: 15 },
   sectionText: { color: '#c7c7cc', marginHorizontal: 16, marginBottom: 10, fontSize: 12 },
   sectionContainer: { marginBottom: 20 },
   
@@ -1130,11 +960,13 @@ const styles = StyleSheet.create({
     color: '#fff', 
     fontSize: 18,
     fontWeight: '800',
-    textAlign: 'center'
+    textAlign: 'center',
+    fontFamily: 'SpaceMono-Regular'
   },
   planPriceHighlight: { 
     color: '#ffd166',
-    fontSize: 20
+    fontSize: 20,
+    fontFamily: 'SpaceMono-Regular'
   },
   planFeatures: {
     marginBottom: 10
@@ -1228,7 +1060,6 @@ const styles = StyleSheet.create({
   // Modal styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#121219', borderRadius: 12, padding: 20, width: '85%', maxHeight: '70%' },
-  filterScrollView: { maxHeight: 300, marginBottom: 16 },
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
   
   // Filter type buttons
@@ -1238,10 +1069,68 @@ const styles = StyleSheet.create({
   filterTypeText: { color: '#c7c7cc', fontSize: 14, fontWeight: '600' },
   filterTypeTextActive: { color: '#fff', fontWeight: '700' },
   
-  // Filter items
-  filterItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  filterText: { color: '#c7c7cc', fontSize: 16 },
-  filterTextActive: { color: '#e50914', fontWeight: '700' },
+  // Filter Grid Layout
+  filterGridContainer: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  filterGridContent: {
+    paddingHorizontal: 4,
+  },
+  filterGridItem: {
+    flex: 1,
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    margin: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  filterGridItemActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  filterGridText: {
+    color: '#c7c7cc',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  filterGridTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  
+  // Custom Year Input Styles
+  yearFilterContainer: {
+    marginBottom: 16,
+  },
+  customYearContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  customYearLabel: {
+    color: '#c7c7cc',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  customYearInput: {
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#fff',
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e50914',
+    textAlign: 'center',
+  },
   
   modalButtonRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, gap: 12 },
   modalResetBtn: { backgroundColor: '#1c1c23', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: 'center', flex: 1 },

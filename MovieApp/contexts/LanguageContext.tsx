@@ -58,18 +58,25 @@ const translations = {
     'search.no_results': 'No results found for',
     'search.try_different': 'Try searching with different keywords',
     'search.popular_searches': 'Popular Searches',
+    'search.filter_description': 'Choose a genre to search for movies',
     
-    // Filter
-    'filter.options': 'Filter Options',
-    'filter.genre': 'Genre',
-    'filter.year': 'Year',
-    'filter.studio': 'Studio',
-    'filter.apply': 'Apply',
+        // Filter
+        'filter.options': 'Filter Options',
+        'filter.genre': 'Genre',
+        'filter.year': 'Year',
+        'filter.studio': 'Studio',
+        'filter.apply': 'Apply',
+        'filter.reset': 'Reset',
+        'filter.active_filters': 'Active Filters',
+        'filter.signin_required_title': 'Sign In Required',
+        'filter.signin_required_message': 'Please sign in to use the filter feature',
     
     // Common
     'common.movie': 'Movie',
     'common.tv_show': 'TV Show',
     'common.hd': 'HD',
+    'common.cancel': 'Cancel',
+    'common.signin': 'Sign In',
     'common.ultra_hd': 'Ultra HD',
     'common.full_hd': 'Full HD',
     'common.resolution': 'Resolution',
@@ -136,6 +143,30 @@ const translations = {
     // Language options
     'language.english': 'English',
     'language.vietnamese': 'Vietnamese',
+    
+    // MovieBox Screen
+    'moviebox.title': 'MovieBox',
+    'moviebox.subtitle': 'movies saved',
+    'moviebox.sort_by': 'Sort by:',
+    'moviebox.sort_date': 'Date Added',
+    'moviebox.sort_title': 'Movie Title',
+    'moviebox.sort_rating': 'Rating',
+    'moviebox.episodes': 'episodes',
+    'moviebox.season': 'Season',
+    'moviebox.remove_from_box': 'Remove from MovieBox',
+    'moviebox.add_to_box': 'Add to MovieBox',
+    'moviebox.empty_title': 'Your MovieBox is empty',
+    'moviebox.empty_subtitle': 'Start building your collection by saving movies and TV shows',
+    'moviebox.browse_movies': 'Browse Movies',
+    'moviebox.login_required_title': 'Login Required',
+    'moviebox.login_required_subtitle': 'Please sign in to access your saved movies',
+    'moviebox.sign_in': 'Sign In',
+    'moviebox.network_error_title': 'Connection Error',
+    'moviebox.network_error_subtitle': 'Please check your internet connection and try again',
+    'moviebox.server_error_title': 'Server Error',
+    'moviebox.server_error_subtitle': 'Something went wrong on our end. Please try again',
+    'moviebox.retry': 'Retry',
+    'moviebox.loading': 'Loading your movies...',
   },
   vi: {
     // Header
@@ -174,18 +205,25 @@ const translations = {
     'search.no_results': 'Không tìm thấy kết quả cho',
     'search.try_different': 'Thử tìm kiếm với từ khóa khác',
     'search.popular_searches': 'Tìm kiếm phổ biến',
+    'search.filter_description': 'Chọn thể loại để tìm kiếm phim',
     
-    // Filter
-    'filter.options': 'Tùy chọn lọc',
-    'filter.genre': 'Thể loại',
-    'filter.year': 'Năm',
-    'filter.studio': 'Studio',
-    'filter.apply': 'Áp dụng',
+        // Filter
+        'filter.options': 'Tùy chọn lọc',
+        'filter.genre': 'Thể loại',
+        'filter.year': 'Năm',
+        'filter.studio': 'Studio',
+        'filter.apply': 'Áp dụng',
+        'filter.reset': 'Đặt lại',
+        'filter.active_filters': 'Bộ lọc đang hoạt động',
+        'filter.signin_required_title': 'Yêu cầu đăng nhập',
+        'filter.signin_required_message': 'Vui lòng đăng nhập để sử dụng tính năng lọc',
     
     // Common
     'common.movie': 'Phim',
     'common.tv_show': 'TV Show',
     'common.hd': 'HD',
+    'common.cancel': 'Hủy',
+    'common.signin': 'Đăng nhập',
     'common.ultra_hd': 'Ultra HD',
     'common.full_hd': 'Full HD',
     'common.resolution': 'Độ phân giải',
@@ -252,6 +290,30 @@ const translations = {
     // Language options
     'language.english': 'English',
     'language.vietnamese': 'Tiếng Việt',
+    
+    // MovieBox Screen
+    'moviebox.title': 'MovieBox',
+    'moviebox.subtitle': 'phim đã lưu',
+    'moviebox.sort_by': 'Sắp xếp theo:',
+    'moviebox.sort_date': 'Ngày thêm',
+    'moviebox.sort_title': 'Tên phim',
+    'moviebox.sort_rating': 'Đánh giá',
+    'moviebox.episodes': 'tập',
+    'moviebox.season': 'Mùa',
+    'moviebox.remove_from_box': 'Xóa khỏi MovieBox',
+    'moviebox.add_to_box': 'Thêm vào MovieBox',
+    'moviebox.empty_title': 'MovieBox của bạn trống',
+    'moviebox.empty_subtitle': 'Bắt đầu xây dựng bộ sưu tập bằng cách lưu phim và TV show',
+    'moviebox.browse_movies': 'Duyệt phim',
+    'moviebox.login_required_title': 'Cần đăng nhập',
+    'moviebox.login_required_subtitle': 'Vui lòng đăng nhập để truy cập phim đã lưu',
+    'moviebox.sign_in': 'Đăng nhập',
+    'moviebox.network_error_title': 'Lỗi kết nối',
+    'moviebox.network_error_subtitle': 'Vui lòng kiểm tra kết nối internet và thử lại',
+    'moviebox.server_error_title': 'Lỗi máy chủ',
+    'moviebox.server_error_subtitle': 'Đã xảy ra lỗi từ phía chúng tôi. Vui lòng thử lại',
+    'moviebox.retry': 'Thử lại',
+    'moviebox.loading': 'Đang tải phim của bạn...',
   }
 };
 
@@ -273,7 +335,6 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
         setLanguageState(savedLanguage as Language);
       }
     } catch (error) {
-      console.log('Error loading language preference:', error);
     }
   };
 
@@ -281,7 +342,6 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     try {
       await AsyncStorage.setItem('language_preference', lang);
     } catch (error) {
-      console.log('Error saving language preference:', error);
     }
   };
 
@@ -291,7 +351,8 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
   };
 
   const t = (key: string): string => {
-    return translations[language][key] || key;
+    const langMap = (translations as any)[language] as Record<string, string> | undefined;
+    return (langMap && (langMap[key] as string)) || key;
   };
 
   return (

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
-import { movieAppApi } from '../services/api';
+import filmzoneApi from '../services/filmzone-api';
 
 // Types for API context
 interface ApiState {
@@ -16,7 +16,7 @@ interface ApiContextType {
     setOnlineStatus: (isOnline: boolean) => void;
     clearError: () => void;
   };
-  api: typeof movieAppApi;
+  api: typeof filmzoneApi;
 }
 
 // Actions
@@ -74,7 +74,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
   const value: ApiContextType = {
     state,
     actions,
-    api: movieAppApi,
+    api: filmzoneApi,
   };
 
   return (

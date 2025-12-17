@@ -1,21 +1,34 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
-import { signOut } from '../services/auth';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { movieAppApi } from '../services/api';
+import filmzoneApi from '../services/filmzone-api';
 import * as Haptics from 'expo-haptics';
-import * as React from 'react';
+import { ListSkeleton } from '../components/SkeletonPlaceholder';
+import { NetworkErrorState, ServerErrorState } from '../components/ErrorState';
+import { AnimatedButton, AnimatedCard } from '../components/AnimatedPressable';
 
 export default function ProfileScreen() {
   const { authState, signOut: authSignOut, updateSubscription, updateUser } = useAuth();
   const { t } = useLanguage();
   const { theme, toggleTheme, isDarkMode } = useTheme();
+  const { 
+    notificationsEnabled, 
+    notificationSettings,
+    togglePushNotifications,
+    toggleEmailUpdates,
+    toggleMovieRecommendations,
+    toggleNewContentAlerts,
+    toggleSubscriptionReminders,
+    sendTestNotification
+  } = useNotifications();
   const [name, setName] = useState('John Doe');
   const [email, setEmail] = useState('john@example.com');
   const [password, setPassword] = useState('');
@@ -23,7 +36,7 @@ export default function ProfileScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [avatar, setAvatar] = useState('');
-  const [notifications, setNotifications] = useState(true);
+  // Notification states - sử dụng từ context thay vì local state
   const [emailUpdates, setEmailUpdates] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('starter');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -32,6 +45,28 @@ export default function ProfileScreen() {
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
   const [showBillingHistory, setShowBillingHistory] = useState(false);
+  const [expandComments, setExpandComments] = useState(false);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [planPrices, setPlanPrices] = useState<Record<string, string>>({});
+  const [priceList, setPriceList] = useState<any[]>([]);
+  const [currentPlan, setCurrentPlan] = useState<any | null>(null);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [fetchedSubscription, setFetchedSubscription] = useState<any | null>(null);
+
+  // helper for plan/price
+  const getPlanId = (plan: any) => plan?.planID ?? plan?.planId ?? plan?.id;
+  const getPriceId = (plan: any, sub?: any) =>
+    sub?.priceID ?? sub?.priceId ?? plan?.priceID ?? plan?.priceId;
+  const formatPrice = (price: any) => {
+    if (!price) return 'N/A';
+    if (price.amount !== undefined) {
+      const amountNum = Number(price.amount);
+      if (!isNaN(amountNum) && amountNum === 0) return 'Free';
+      const currency = price.currency || '';
+      return `${price.amount} ${currency}`.trim();
+    }
+    return price.toString();
+  };
 
   useEffect(() => {
     if (authState.user) {
@@ -41,26 +76,188 @@ export default function ProfileScreen() {
     }
   }, [authState.user]);
 
+  // Load plans/prices when subscription tab active or user changes
+  useEffect(() => {
+    const loadPlans = async () => {
+      setPlansLoading(true);
+      try {
+        const userId = authState.user?.userID;
+
+        // Fetch latest subscription by user (choose max subscriptionID)
+        let apiSubscription: any = null;
+        if (userId) {
+          try {
+            const subsRes = await filmzoneApi.getSubscriptionsByUser(userId);
+            const subsOk = (subsRes as any).success === true || (subsRes.errorCode >= 200 && subsRes.errorCode < 300);
+            if (subsOk && subsRes.data) {
+              const subsArr = Array.isArray(subsRes.data) ? subsRes.data : [subsRes.data];
+              if (subsArr.length > 0) {
+                apiSubscription = subsArr
+                  .filter((s: any) => s)
+                  .sort((a: any, b: any) => {
+                    const aId = Number(a.subscriptionID ?? a.subscriptionId ?? 0);
+                    const bId = Number(b.subscriptionID ?? b.subscriptionId ?? 0);
+                    return bId - aId;
+                  })[0];
+              }
+            }
+          } catch (err) {
+            console.log('Profile: getSubscriptionsByUser failed', err);
+          }
+        }
+
+        // Chỉ sử dụng subscription lấy từ API, không fallback sang authState
+        const sub = apiSubscription || null;
+        setFetchedSubscription(sub);
+        if (!sub) {
+          setCurrentPlan(null);
+        }
+        let subPlanId = (sub as any)?.planID ?? (sub as any)?.planId;
+
+        // load all prices
+        let pricesData: any[] = [];
+        try {
+          const pricesRes = await filmzoneApi.getAllPrices();
+          const pricesOk = (pricesRes as any).success === true || (pricesRes.errorCode >= 200 && pricesRes.errorCode < 300);
+          pricesData = pricesOk && pricesRes.data ? pricesRes.data : [];
+          setPriceList(pricesData);
+        } catch {
+          pricesData = [];
+          setPriceList([]);
+        }
+
+        // Nếu không có planID nhưng có priceID, cố gắng suy ra planID từ price
+        if (sub && !subPlanId && ((sub as any)?.priceID ?? (sub as any)?.priceId)) {
+          const subPriceId = (sub as any)?.priceID ?? (sub as any)?.priceId;
+          try {
+            const priceRes = await filmzoneApi.getPriceById(Number(subPriceId));
+            const priceOk = (priceRes as any).success === true || (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+            if (priceOk && priceRes.data) {
+              subPlanId = priceRes.data.planID ?? priceRes.data.planId ?? subPlanId;
+            }
+          } catch {}
+        }
+
+        if (sub) {
+          // current plan từ subscription (lấy subscriptionID lớn nhất) và planID chính xác
+          const rawPlanId =
+            subPlanId ??
+            (sub as any)?.planID ??
+            (sub as any)?.planId;
+          const planIdNum = Number(rawPlanId);
+          const planIdStr = String(rawPlanId ?? 'current');
+
+          // Lấy thông tin plan từ /api/plans/{planID} để dùng name chính xác
+          let planFromApi: any | null = null;
+          if (!Number.isNaN(planIdNum) && Number.isFinite(planIdNum) && planIdNum > 0) {
+            try {
+              const planRes = await filmzoneApi.getPlanById(planIdNum);
+              const planOk =
+                (planRes as any).success === true ||
+                (planRes.errorCode >= 200 && planRes.errorCode < 300);
+              if (planOk && planRes.data) {
+                planFromApi = planRes.data;
+              }
+            } catch {
+              // ignore, sẽ fallback bên dưới
+            }
+          }
+
+          if (planFromApi) {
+            setCurrentPlan({
+              ...(planFromApi as any),
+              planID: planFromApi.planID ?? planFromApi.planId ?? planIdNum,
+              name: planFromApi.name,
+              code: planFromApi.code,
+            });
+          } else {
+            // Nếu không gọi được /api/plans/{planID}, coi như không có current plan
+            setCurrentPlan(null);
+          }
+
+          // tải danh sách plans để hiển thị available plans
+          const plansRes = await filmzoneApi.getAllPlans();
+          const plansOk = (plansRes as any).success === true || (plansRes.errorCode >= 200 && plansRes.errorCode < 300);
+          if (plansOk && plansRes.data) {
+            const activePlans = (plansRes.data || []).filter((p: any) => p.isActive !== false);
+            setPlans(activePlans);
+
+            // Map giá cho từng plan từ bảng Price (amount + currency) – chỉ dùng cho Available plans
+            if (activePlans.length && pricesData.length) {
+              const priceMap: Record<string, string> = {};
+              activePlans.forEach((p: any) => {
+                const pid = String(getPlanId(p) ?? '');
+                if (!pid) return;
+                const matched = pricesData.find(
+                  (pr: any) => String(pr.planID ?? pr.planId) === pid
+                );
+                if (matched) {
+                  priceMap[pid] = formatPrice(matched);
+                }
+              });
+              if (Object.keys(priceMap).length) {
+                setPlanPrices(prev => ({ ...prev, ...priceMap }));
+              }
+            }
+          } else {
+            setPlans([]);
+          }
+        } else {
+          // Không có subscription: không đặt current plan
+          setCurrentPlan(null);
+
+          // load plans để phần available plans vẫn có dữ liệu
+          const plansRes = await filmzoneApi.getAllPlans();
+          const plansOk = (plansRes as any).success === true || (plansRes.errorCode >= 200 && plansRes.errorCode < 300);
+          if (plansOk && plansRes.data) {
+            const activePlans = (plansRes.data || []).filter((p: any) => p.isActive !== false);
+            setPlans(activePlans);
+
+            // Map giá cho từng plan từ bảng Price (amount + currency)
+            if (activePlans.length && pricesData.length) {
+              const priceMap: Record<string, string> = {};
+              activePlans.forEach((p: any) => {
+                const pid = String(getPlanId(p) ?? '');
+                if (!pid) return;
+                const matched = pricesData.find(
+                  (pr: any) => String(pr.planID ?? pr.planId) === pid
+                );
+                if (matched) {
+                  priceMap[pid] = formatPrice(matched);
+                }
+              });
+              if (Object.keys(priceMap).length) {
+                setPlanPrices(prev => ({ ...prev, ...priceMap }));
+              }
+            }
+          } else {
+            setPlans([]);
+          }
+        }
+      } catch {
+        setPlans([]);
+        setCurrentPlan(null);
+      } finally {
+        setPlansLoading(false);
+      }
+    };
+
+    if (activeTab === 'subscription') {
+      loadPlans();
+    }
+  }, [activeTab, authState.user]);
+
   // Function to refresh overview stats
   const refreshOverviewStats = async () => {
     if (authState.user && authState.user.userID) {
       try {
-        console.log('🔄 Refreshing overview stats...');
         const { movieAppApi } = await import('../services/mock-api');
-        const response = await movieAppApi.getOverviewStats(authState.user.userID.toString());
+        const response = await (movieAppApi as any).getOverviewStats(authState.user.userID.toString());
         
         if (response.success && response.data) {
           setOverviewStats(response.data);
-          console.log('✅ Overview stats refreshed:', response.data);
-          console.log('✅ Latest comments count:', response.data.latestComments?.length || 0);
-          console.log('✅ Latest comments:', response.data.latestComments?.map((c: any) => ({ 
-            id: c.commentID, 
-            content: c.content.substring(0, 30) + '...', 
-            movie: c.movie?.title 
-          })) || []);
         }
       } catch (error) {
-        console.error('Error refreshing overview stats:', error);
       }
     }
   };
@@ -71,11 +268,141 @@ export default function ProfileScreen() {
       if (activeTab === 'overview' && authState.user && authState.user.userID) {
         setIsLoadingStats(true);
         try {
-          const { movieAppApi } = await import('../services/mock-api');
-          const response = await movieAppApi.getOverviewStats(authState.user.userID.toString());
+          // Load watch progress (films watched)
+          let watchedFilms: any[] = [];
+          try {
+            const watchProgressResponse = await filmzoneApi.getWatchProgressByUserId(authState.user.userID);
+            const progressOk = (watchProgressResponse as any).success === true || (watchProgressResponse.errorCode >= 200 && watchProgressResponse.errorCode < 300);
+            
+            if (progressOk && watchProgressResponse.data) {
+              const progressList = Array.isArray(watchProgressResponse.data) ? watchProgressResponse.data : [watchProgressResponse.data];
+              
+              // Filter: Only consider movies that have been watched at least 80% (considered as "watched")
+              const watchedProgressList = progressList.filter((p: any) => {
+                if (!p.positionSeconds || !p.durationSeconds || p.durationSeconds === 0) {
+                  return false; // Skip if no valid progress data
+                }
+                const progressPercentage = (p.positionSeconds / p.durationSeconds) * 100;
+                return progressPercentage >= 80; // Only movies watched >= 80% are considered "watched"
+              });
+              
+              // Get unique movie IDs from watched movies
+              const uniqueMovieIds = [...new Set(watchedProgressList.map((p: any) => p.movieID).filter(Boolean))];
+              
+              // Fetch movie info for each unique movie
+              watchedFilms = await Promise.all(
+                uniqueMovieIds.map(async (movieId: number) => {
+                  try {
+                    const movieResponse = await filmzoneApi.getMovieById(movieId);
+                    const movieOk = (movieResponse as any).success === true || (movieResponse.errorCode >= 200 && movieResponse.errorCode < 300);
+                    if (movieOk && movieResponse.data) {
+                      // Find the latest watch progress for this movie
+                      const latestProgress = watchedProgressList
+                        .filter((p: any) => p.movieID === movieId)
+                        .sort((a: any, b: any) => {
+                          const dateA = new Date(a.updatedAt || 0).getTime();
+                          const dateB = new Date(b.updatedAt || 0).getTime();
+                          return dateB - dateA;
+                        })[0];
+                      
+                      return {
+                        id: movieResponse.data.movieID,
+                        title: movieResponse.data.title || 'Movie',
+                        image: movieResponse.data.image || null,
+                        lastWatchedAt: latestProgress?.updatedAt || new Date().toISOString(),
+                      };
+                    }
+                  } catch (err) {
+                    console.warn('Failed to fetch movie for watch progress:', err);
+                    return null;
+                  }
+                  return null;
+                })
+              );
+              // Filter out null values and sort by last watched date
+              watchedFilms = watchedFilms
+                .filter(Boolean)
+                .sort((a: any, b: any) => {
+                  const dateA = new Date(a.lastWatchedAt || 0).getTime();
+                  const dateB = new Date(b.lastWatchedAt || 0).getTime();
+                  return dateB - dateA;
+                });
+            }
+          } catch (err) {
+            console.warn('Failed to load watch progress:', err);
+          }
+
+          // Load comments from backend API
+          const commentsResponse = await filmzoneApi.getCommentsByUserID(authState.user.userID);
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
           
-          if (response.success && response.data) {
-            setOverviewStats(response.data);
+          let latestComments: any[] = [];
+          if (commentsOk && commentsResponse.data) {
+            const comments = Array.isArray(commentsResponse.data) ? commentsResponse.data : [commentsResponse.data];
+            // Sort by createdAt descending (don't slice here, we'll show 3 by default and all when expanded)
+            const sortedComments = comments
+              .sort((a: any, b: any) => {
+                const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
+                const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
+                return dateB - dateA;
+              });
+
+            // Fetch movie info for each comment
+            latestComments = await Promise.all(
+              sortedComments.map(async (comment: any) => {
+                let movieInfo: { title: string; image: string | null } = { title: 'Movie', image: null };
+                if (comment.movieID) {
+                  try {
+                    const movieResponse = await filmzoneApi.getMovieById(comment.movieID);
+                    const movieOk = (movieResponse as any).success === true || (movieResponse.errorCode >= 200 && movieResponse.errorCode < 300);
+                    if (movieOk && movieResponse.data) {
+                      movieInfo = {
+                        title: movieResponse.data.title || 'Movie',
+                        image: movieResponse.data.image || null,
+                      };
+                    }
+                  } catch (err) {
+                    console.warn('Failed to fetch movie for comment:', err);
+                  }
+                }
+                return {
+                  ...comment,
+                  movie: comment.movie || movieInfo,
+                };
+              })
+            );
+          }
+
+          // Load other stats from mock API (if needed)
+          try {
+            const { movieAppApi } = await import('../services/mock-api');
+            const response = await (movieAppApi as any).getOverviewStats(authState.user.userID.toString());
+            
+            if (response.success && response.data) {
+              setOverviewStats({
+                ...response.data,
+                latestComments: latestComments,
+                commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : (response.data.commentsCount || 0),
+                watchedFilms: watchedFilms,
+                filmsWatched: watchedFilms.length,
+              });
+            } else {
+              // If mock API fails, still set comments and watched films
+              setOverviewStats({
+                latestComments: latestComments,
+                commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : 0,
+                watchedFilms: watchedFilms,
+                filmsWatched: watchedFilms.length,
+              });
+            }
+          } catch (error) {
+            // If mock API fails, still set comments and watched films
+            setOverviewStats({
+              latestComments: latestComments,
+              commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : 0,
+              watchedFilms: watchedFilms,
+              filmsWatched: watchedFilms.length,
+            });
           }
         } catch (error) {
           console.error('Error loading overview stats:', error);
@@ -86,22 +413,143 @@ export default function ProfileScreen() {
     };
 
     const loadBillingHistory = async () => {
-      if (activeTab === 'subscription' && authState.user && authState.user.userID) {
+      if ((activeTab === 'subscription' || activeTab === 'overview') && authState.user && authState.user.userID) {
         try {
-          const { movieAppApi } = await import('../services/mock-api');
-          const response = await movieAppApi.getBillingHistory(authState.user.userID.toString());
-          
-          if (response.errorCode === 200 && response.data) {
-            setBillingHistory(response.data);
+          const response = await filmzoneApi.getPaymentOrdersByUser(authState.user.userID);
+          const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+          if (ok && response.data) {
+            // Backend có thể trả về 1 order object, hoặc list orders, hoặc list wrapper { errorCode, data }
+            const rawList = Array.isArray(response.data) ? response.data : [response.data];
+            const orders = rawList
+              .map((x: any) => (x && typeof x === 'object' && 'data' in x ? x.data : x))
+              .filter(Boolean);
+
+            if (rawList.length) {
+              console.log('Billing: sample raw keys:', Object.keys(rawList[0] || {}));
+              console.log('Billing: sample raw:', JSON.stringify(rawList[0], null, 2));
+            }
+            if (orders.length) {
+              console.log('Billing: normalized order keys:', Object.keys(orders[0] || {}));
+              console.log('Billing: normalized order:', JSON.stringify(orders[0], null, 2));
+            }
+            // Enrich each order with plan name
+            const enrichedOrders = await Promise.all(
+              orders.map(async (order: any) => {
+                let planName = 'N/A';
+                let amount: number | null = null;
+                let currency: string | null = null;
+
+                // Many backends only store priceId on order -> use /api/price/{priceID} to get amount/currency + planID
+                const priceId = order.priceID ?? order.priceId ?? order.PriceID ?? order.PriceId;
+                // Prefer planID from order (as swagger). Fallback to other variants.
+                let planId =
+                  order.planID ??
+                  order.planId ??
+                  order.plan_id ??
+                  order.PlanID ??
+                  order.PlanId ??
+                  order.plan ??
+                  order.Plan;
+
+                if (priceId) {
+                  try {
+                    const priceRes = await filmzoneApi.getPriceById(Number(priceId));
+                    const priceOk =
+                      (priceRes as any).success === true ||
+                      (priceRes.errorCode >= 200 && priceRes.errorCode < 300);
+                    if (priceOk && priceRes.data) {
+                      amount = Number((priceRes.data as any).amount);
+                      currency = (priceRes.data as any).currency || 'VND';
+                      // Only use planID from price if order didn't provide it
+                      planId = planId ?? (priceRes.data as any).planID ?? (priceRes.data as any).planId;
+                    }
+                  } catch (err) {
+                    console.warn('Failed to fetch price for order:', err);
+                  }
+                }
+
+                // Fallback: try amount/currency directly on order
+                if (amount === null || Number.isNaN(amount)) {
+                  const a = order.amount ?? order.Amount ?? order.totalAmount ?? order.TotalAmount;
+                  amount = a !== undefined && a !== null ? Number(a) : null;
+                }
+                if (!currency) {
+                  currency =
+                    order.currency ?? order.Currency ?? order.currencyCode ?? order.CurrencyCode ?? 'VND';
+                }
+
+                if (planId !== undefined && planId !== null) {
+                  try {
+                    const planIdNum = Number(planId);
+                    if (!Number.isFinite(planIdNum)) {
+                      throw new Error(`Invalid planId: ${String(planId)}`);
+                    }
+                    const planRes = await filmzoneApi.getPlanById(planIdNum);
+                    const planOk =
+                      (planRes as any).success === true ||
+                      (planRes.errorCode >= 200 && planRes.errorCode < 300);
+                    if (planOk && planRes.data) {
+                      planName = planRes.data.name || planRes.data.code || 'N/A';
+                    }
+                  } catch (err) {
+                    console.warn('Failed to fetch plan for order:', err);
+                  }
+                }
+                // Map fields from order response
+                // Map fields (prefer exact swagger field names first)
+                const provider =
+                  order.provider ??
+                  order.paymentProvider ??
+                  order.PaymentProvider ??
+                  order.payment_provider ??
+                  'VNPay';
+                const status =
+                  order.status ??
+                  order.orderStatus ??
+                  order.Status ??
+                  order.order_status ??
+                  'N/A';
+                const createdAt =
+                  order.createdAt ??
+                  order.createdDate ??
+                  order.CreatedAt ??
+                  order.created_at ??
+                  null;
+                const orderAmount =
+                  amount !== null && !Number.isNaN(Number(amount))
+                    ? Number(amount)
+                    : (order.amount ?? order.Amount ?? order.totalAmount ?? order.TotalAmount ?? null);
+                const orderCurrency = currency || (order.currency ?? order.Currency ?? order.currencyCode ?? order.CurrencyCode ?? 'VND');
+
+                return {
+                  billingID: order.orderID ?? order.orderId ?? order.id,
+                  subscriptionPlan: planName,
+                  amount: orderAmount === null ? null : Number(orderAmount),
+                  currency: orderCurrency,
+                  paymentMethod: provider,
+                  status,
+                  billingDate: createdAt || new Date().toISOString(),
+                  transactionID: order.transactionID ?? order.transactionId ?? order.TransactionID ?? order.transaction_id ?? order.orderId ?? order.orderID ?? null,
+                };
+              })
+            );
+            setBillingHistory(enrichedOrders);
+          } else {
+            setBillingHistory([]);
           }
         } catch (error) {
-          console.error('Error loading billing history:', error);
+          console.warn('Failed to load billing history:', error);
+          setBillingHistory([]);
         }
       }
     };
 
     loadOverviewStats();
     loadBillingHistory();
+    // Reset expand state when switching tabs
+    if (activeTab !== 'overview') {
+      setExpandComments(false);
+    }
   }, [activeTab, authState.user]);
 
   // Refresh overview stats when switching to overview tab
@@ -114,11 +562,9 @@ export default function ProfileScreen() {
   // Refresh overview stats when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      console.log('🔄 Profile: Screen focused, activeTab:', activeTab, 'user:', authState.user?.userID);
       if (activeTab === 'overview' && authState.user) {
         // Add a small delay to ensure data is updated
         setTimeout(() => {
-          console.log('🔄 Profile: Refreshing overview stats...');
           refreshOverviewStats();
         }, 100);
       }
@@ -170,7 +616,7 @@ export default function ProfileScreen() {
             {
               text: 'I have the code',
               onPress: () => {
-                // TODO: Navigate to verification screen or show input dialog
+                // Navigate to verification screen or show input dialog
                 Alert.prompt(
                   'Enter Verification Code',
                   'Please enter the verification code sent to your email:',
@@ -244,7 +690,7 @@ export default function ProfileScreen() {
       
       if (response.errorCode === 200) {
         // Update auth context with new user data
-        updateUser(response.data);
+        updateUser(response.data as any);
       } else {
         throw new Error(response.errorMessage || 'Failed to update profile');
       }
@@ -291,6 +737,81 @@ export default function ProfileScreen() {
       avatar: '',
       profilePicture: ''
     });
+  };
+
+  // Notification handlers
+  const handleTogglePushNotifications = async (enabled: boolean) => {
+    try {
+      await Haptics.selectionAsync();
+      await togglePushNotifications(enabled);
+      
+      Alert.alert(
+        enabled ? 'Notifications Enabled' : 'Notifications Disabled',
+        enabled 
+          ? 'You will now receive push notifications from FlixGo.' 
+          : 'You will no longer receive push notifications.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'An error occurred while updating notifications.');
+    }
+  };
+
+  const handleToggleEmailUpdates = async (enabled: boolean) => {
+    try {
+      await Haptics.selectionAsync();
+      await toggleEmailUpdates(enabled);
+      setEmailUpdates(enabled);
+      
+      Alert.alert(
+        enabled ? 'Email Updates Enabled' : 'Email Updates Disabled',
+        enabled 
+          ? 'You will now receive email updates about new content and features.' 
+          : 'You will no longer receive email updates.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'An error occurred while updating email settings.');
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    try {
+      await Haptics.selectionAsync();
+      await sendTestNotification();
+      
+      Alert.alert(
+        'Test Notification Sent',
+        'Check your notification panel to see the test notification!',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send test notification.');
+    }
+  };
+
+  const handleToggleMovieRecommendations = async (enabled: boolean) => {
+    try {
+      await Haptics.selectionAsync();
+      await toggleMovieRecommendations(enabled);
+    } catch (error) {
+    }
+  };
+
+  const handleToggleNewContentAlerts = async (enabled: boolean) => {
+    try {
+      await Haptics.selectionAsync();
+      await toggleNewContentAlerts(enabled);
+    } catch (error) {
+    }
+  };
+
+  const handleToggleSubscriptionReminders = async (enabled: boolean) => {
+    try {
+      await Haptics.selectionAsync();
+      await toggleSubscriptionReminders(enabled);
+    } catch (error) {
+    }
   };
 
   return (
@@ -348,19 +869,32 @@ export default function ProfileScreen() {
               {/* Statistics Cards */}
               <View style={styles.statsGrid}>
                 <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
-                  <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Subscription Plan</Text>
+                  <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Total Spent on Plans</Text>
                   <Text style={styles.overviewStatValue}>
-                    {authState.user?.subscription?.plan ? authState.user.subscription.plan.toUpperCase() : 'STARTER'}
+                    {(() => {
+                      const items = Array.isArray(billingHistory) ? billingHistory : [];
+                      if (!items.length) return '0 VND';
+                      // Calculate total from all billing items' amount
+                      const total = items.reduce((sum, b) => {
+                        const amount = b?.amount;
+                        if (amount === null || amount === undefined) return sum;
+                        const n = Number(amount);
+                        return sum + (Number.isFinite(n) && !Number.isNaN(n) ? n : 0);
+                      }, 0);
+                      // Use currency from first item if available; otherwise default to VND
+                      const currency = items.find((b: any) => b?.currency)?.currency || 'VND';
+                      return `${total.toFixed(2)}`;
+                    })()}
                   </Text>
                   <Text style={[styles.overviewStatSubtext, { color: theme.colors.textSecondary }]}>
-                    {authState.user?.subscription?.status === 'active' ? 'Active' : 'Inactive'}
+                    Sum of all billing items
                   </Text>
                 </View>
                 
                 <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
                   <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Films Watched</Text>
-                  <Text style={styles.overviewStatValue}>
-                    {overviewStats?.filmsWatched !== undefined ? overviewStats.filmsWatched : '---'}
+                  <Text style={styles.overviewStatFilmValue}>
+                    {overviewStats?.filmsWatched !== undefined ? overviewStats.filmsWatched : (overviewStats?.watchedFilms?.length || 0)}
                   </Text>
                 </View>
                 
@@ -372,26 +906,48 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* Recent Views */}
+              {/* Films Watched List */}
               <View style={styles.overviewSection}>
-                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Recent Views</Text>
-                {overviewStats?.recentViews && overviewStats.recentViews.length > 0 ? (
+                <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Films Watched</Text>
+                {overviewStats?.watchedFilms && overviewStats.watchedFilms.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {overviewStats.recentViews.map((view: any, index: number) => (
-                      <View key={index} style={[styles.recentViewCard, { backgroundColor: theme.colors.surface }]}>
-                        <ImageWithPlaceholder source={view.image} style={styles.recentViewImage} showRedBorder={false} />
+                    {overviewStats.watchedFilms.map((film: any, index: number) => (
+                      <Pressable
+                        key={film.id || index}
+                        onPress={() => {
+                          const isSeries = film.isSeries || false;
+                          router.push({
+                            pathname: isSeries ? '/details/series/[id]' : '/details/movie/[id]',
+                            params: {
+                              id: film.id,
+                              title: film.title,
+                              cover: film.image,
+                            }
+                          } as any);
+                        }}
+                        style={({ pressed }) => [
+                          styles.recentViewCard,
+                          { backgroundColor: theme.colors.surface },
+                          pressed && { opacity: 0.8 }
+                        ]}
+                      >
+                        <ImageWithPlaceholder 
+                          source={{ uri: film.image || 'https://via.placeholder.com/120x160/333/fff?text=Movie' }} 
+                          style={styles.recentViewImage} 
+                          showRedBorder={false} 
+                        />
                         <Text style={[styles.recentViewTitle, { color: theme.colors.text }]} numberOfLines={2}>
-                          {view.title}
+                          {film.title}
                         </Text>
                         <Text style={[styles.recentViewDate, { color: theme.colors.textSecondary }]}>
-                          {new Date(view.lastWatchedAt).toLocaleDateString()}
+                          {film.lastWatchedAt ? new Date(film.lastWatchedAt).toLocaleDateString() : ''}
                         </Text>
-                      </View>
+                      </Pressable>
                     ))}
                   </ScrollView>
                 ) : (
                   <View style={styles.emptyState}>
-                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No recent views</Text>
+                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No films watched yet</Text>
                   </View>
                 )}
               </View>
@@ -400,41 +956,54 @@ export default function ProfileScreen() {
               <View style={styles.overviewSection}>
                 <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Latest Comments</Text>
                 {overviewStats?.latestComments && overviewStats.latestComments.length > 0 ? (
-                  <View style={styles.commentsList}>
-                    {overviewStats.latestComments.map((comment: any, index: number) => {
-                      console.log('🖼️ Comment image debug:', {
-                        commentID: comment.commentID,
-                        movieTitle: comment.movie?.title,
-                        movieImage: comment.movie?.image,
-                        hasImage: !!comment.movie?.image
-                      });
-                      return (
-                      <View key={index} style={[styles.commentCard, { backgroundColor: theme.colors.surface }]}>
-                        <View style={styles.commentContent}>
-                          <ImageWithPlaceholder 
-                            source={{ uri: comment.movie?.image || 'https://via.placeholder.com/60x90/333/fff?text=Movie' }}
-                            style={styles.commentMovieImage}
-                            showRedBorder={false}
-                            errorText="?"
-                          />
-                          <View style={styles.commentTextContent}>
-                            <View style={styles.commentHeader}>
-                              <Text style={[styles.commentMovieTitle, { color: theme.colors.text }]}>
-                                {comment.movie?.title || 'Movie'}
-                              </Text>
-                              <Text style={[styles.commentDate, { color: theme.colors.textSecondary }]}>
-                                {new Date(comment.createdAt).toLocaleDateString()}
+                  <>
+                    <View style={styles.commentsList}>
+                      {(expandComments 
+                        ? overviewStats.latestComments 
+                        : overviewStats.latestComments.slice(0, 3)
+                      ).map((comment: any, index: number) => {
+                        return (
+                        <View key={index} style={[styles.commentCard, { backgroundColor: theme.colors.surface }]}>
+                          <View style={styles.commentContent}>
+                            <ImageWithPlaceholder 
+                              source={{ uri: comment.movie?.image || 'https://via.placeholder.com/60x90/333/fff?text=Movie' }}
+                              style={styles.commentMovieImage}
+                              showRedBorder={false}
+                              errorText="?"
+                            />
+                            <View style={styles.commentTextContent}>
+                              <View style={styles.commentHeader}>
+                                <Text style={[styles.commentMovieTitle, { color: theme.colors.text }]}>
+                                  {comment.movie?.title || 'Movie'}
+                                </Text>
+                                <Text style={[styles.commentDate, { color: theme.colors.textSecondary }]}>
+                                  {new Date(comment.createdAt).toLocaleDateString()}
+                                </Text>
+                              </View>
+                              <Text style={[styles.commentText, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                                {comment.content}
                               </Text>
                             </View>
-                            <Text style={[styles.commentText, { color: theme.colors.textSecondary }]} numberOfLines={2}>
-                              {comment.content}
-                            </Text>
                           </View>
                         </View>
-                      </View>
-                      );
-                    })}
-                  </View>
+                        );
+                      })}
+                    </View>
+                    {overviewStats.latestComments.length > 3 && (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.expandButton,
+                          { backgroundColor: theme.colors.surface },
+                          pressed && { opacity: 0.8 }
+                        ]}
+                        onPress={() => setExpandComments(!expandComments)}
+                      >
+                        <Text style={[styles.expandButtonText, { color: theme.colors.primary || '#e50914' }]}>
+                          {expandComments ? 'Show Less' : `Show All (${overviewStats.latestComments.length})`}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </>
                 ) : (
                   <View style={styles.emptyState}>
                     <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No comments yet</Text>
@@ -538,26 +1107,111 @@ export default function ProfileScreen() {
           {/* Preferences */}
           <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Preferences</Text>
+            
+            {/* Push Notifications */}
             <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
-              <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Push Notifications</Text>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Push Notifications</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Receive notifications about new content and updates
+                </Text>
+              </View>
               <Switch
-                value={notifications}
-                onValueChange={setNotifications}
+                value={notificationsEnabled}
+                onValueChange={handleTogglePushNotifications}
                 trackColor={{ false: '#767577', true: '#e50914' }}
-                thumbColor={notifications ? '#fff' : '#f4f3f4'}
+                thumbColor={notificationsEnabled ? '#fff' : '#f4f3f4'}
+                disabled={false}
               />
             </View>
+
+            {/* Test Notification Button */}
+            {notificationsEnabled && (
+              <Pressable 
+                style={({ pressed }) => [styles.testNotificationBtn, pressed && { opacity: 0.9 }]}
+                onPress={handleSendTestNotification}
+                disabled={false}
+              >
+                <Text style={styles.testNotificationBtnText}>Send Test Notification</Text>
+              </Pressable>
+            )}
+
+            {/* Email Updates */}
             <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
-              <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Email Updates</Text>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Email Updates</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Get notified via email about new features
+                </Text>
+              </View>
               <Switch
-                value={emailUpdates}
-                onValueChange={setEmailUpdates}
+                value={notificationSettings.emailUpdates}
+                onValueChange={handleToggleEmailUpdates}
                 trackColor={{ false: '#767577', true: '#e50914' }}
-                thumbColor={emailUpdates ? '#fff' : '#f4f3f4'}
+                thumbColor={notificationSettings.emailUpdates ? '#fff' : '#f4f3f4'}
+                disabled={false}
               />
             </View>
+
+            {/* Movie Recommendations */}
             <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
-              <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Dark Mode</Text>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Movie Recommendations</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Get notified about personalized movie suggestions
+                </Text>
+              </View>
+              <Switch
+                value={notificationSettings.movieRecommendations}
+                onValueChange={handleToggleMovieRecommendations}
+                trackColor={{ false: '#767577', true: '#e50914' }}
+                thumbColor={notificationSettings.movieRecommendations ? '#fff' : '#f4f3f4'}
+                disabled={!notificationsEnabled}
+              />
+            </View>
+
+            {/* New Content Alerts */}
+            <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>New Content Alerts</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Notifications when new movies or series are added
+                </Text>
+              </View>
+              <Switch
+                value={notificationSettings.newContentAlerts}
+                onValueChange={handleToggleNewContentAlerts}
+                trackColor={{ false: '#767577', true: '#e50914' }}
+                thumbColor={notificationSettings.newContentAlerts ? '#fff' : '#f4f3f4'}
+                disabled={!notificationsEnabled}
+              />
+            </View>
+
+            {/* Subscription Reminders */}
+            <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Subscription Reminders</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Reminders about subscription expiry and renewals
+                </Text>
+              </View>
+              <Switch
+                value={notificationSettings.subscriptionReminders}
+                onValueChange={handleToggleSubscriptionReminders}
+                trackColor={{ false: '#767577', true: '#e50914' }}
+                thumbColor={notificationSettings.subscriptionReminders ? '#fff' : '#f4f3f4'}
+                disabled={!notificationsEnabled}
+              />
+            </View>
+
+            {/* Dark Mode */}
+            <View style={[styles.preferenceRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={styles.preferenceContent}>
+                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Dark Mode</Text>
+                <Text style={[styles.preferenceSubtext, { color: theme.colors.textSecondary }]}>
+                  Switch between light and dark themes
+                </Text>
+              </View>
               <Switch
                 value={isDarkMode}
                 onValueChange={toggleTheme}
@@ -565,6 +1219,8 @@ export default function ProfileScreen() {
                 thumbColor={isDarkMode ? '#fff' : '#f4f3f4'}
               />
             </View>
+
+            {/* Error Display */}
           </View>
 
           {/* Danger Zone */}
@@ -583,69 +1239,87 @@ export default function ProfileScreen() {
           {/* Current plan */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Current plan</Text>
-            <View style={[styles.planCard, styles.planActive]}>
-              <Text style={styles.planTitle}>
-                {authState.user?.subscription?.plan === 'premium' ? 'Premium Plan' :
-                 authState.user?.subscription?.plan === 'cinematic' ? 'Cinematic Plan' : 'Free Plan'}
-              </Text>
-              <Text style={styles.planPrice}>
-                {authState.user?.subscription?.plan === 'premium' ? '$19.99 / month' :
-                 authState.user?.subscription?.plan === 'cinematic' ? '$39.99 / 2 months' : '$0 / month'}
-              </Text>
-              <Text style={styles.planStatus}>
-                {authState.user?.subscription?.status === 'active' ? 'Active' : 'Inactive'}
-              </Text>
-              {authState.user?.subscription?.endDate && (
-                <Text style={styles.planExpiry}>
-                  Expires: {new Date(authState.user.subscription.endDate).toLocaleDateString()}
-                </Text>
-              )}
-            </View>
+            {plansLoading ? (
+              <View style={[styles.planCard, styles.planActive, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                <ActivityIndicator color="#e50914" size="small" />
+                <Text style={styles.planTitle}>Loading...</Text>
+              </View>
+            ) : (
+              (() => {
+                const sub: any = fetchedSubscription || null;
+                const hasCurrentPlan = !!sub && !!currentPlan;
+
+                if (!hasCurrentPlan) {
+                  return (
+                    <View style={[styles.planCard, styles.planActive]}>
+                      <Text style={styles.planTitle}>No active subscription</Text>
+                      <Text style={styles.planStatus}>Inactive</Text>
+                    </View>
+                  );
+                }
+
+                const planTitle =
+                  currentPlan?.name ||
+                  currentPlan?.code ||
+                  'Current Plan';
+
+                // Expires: đọc trực tiếp từ subscription.currentPeriodEnd (từ API)
+                let expiryText: string | null = null;
+                if (sub?.currentPeriodEnd) {
+                  const d = new Date(sub.currentPeriodEnd);
+                  if (!isNaN(d.getTime())) {
+                    expiryText = d.toLocaleDateString();
+                  }
+                }
+
+                return (
+                  <View style={[styles.planCard, styles.planActive]}>
+                    <Text style={styles.planTitle}>{planTitle}</Text>
+                    <Text style={styles.planStatus}>
+                      {sub?.status === 'active' ? 'Active' : 'Inactive'}
+                    </Text>
+              
+                    {expiryText ? (
+                      <Text style={styles.planExpiry}>
+                        Expires: {expiryText}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })()
+            )}
           </View>
 
           {/* Available plans */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Available plans</Text>
             <Text style={styles.sectionSubtitle}>Choose your subscription plan:</Text>
-            <View style={styles.plansGrid}>
-              <Pressable 
-                onPress={() => setSelectedPlan('starter')} 
-                style={({ pressed }) => [styles.planCard, selectedPlan === 'starter' && styles.planSelected, pressed && { opacity: 0.9 }]}
-              >
-                <Text style={styles.planTitle}>Starter</Text>
-                <Text style={styles.planPrice}>Free</Text>
-                <Text style={styles.planDuration}>unlimited</Text>
-                <Text style={styles.planFeatures}>• 720p Resolution</Text>
-                <Text style={styles.planFeatures}>• Limited Availability</Text>
-                <Text style={styles.planFeatures}>• Desktop Only</Text>
-              </Pressable>
-              
-              <Pressable 
-                onPress={() => setSelectedPlan('premium')} 
-                style={({ pressed }) => [styles.planCard, selectedPlan === 'premium' && styles.planSelected, pressed && { opacity: 0.9 }]}
-              >
-                <Text style={styles.planTitle}>Premium</Text>
-                <Text style={styles.planPrice}>$19.99</Text>
-                <Text style={styles.planDuration}>per month</Text>
-                <Text style={styles.planFeatures}>• Full HD</Text>
-                <Text style={styles.planFeatures}>• Lifetime Availability</Text>
-                <Text style={styles.planFeatures}>• TV & Desktop</Text>
-                <Text style={styles.planFeatures}>• 24/7 Support</Text>
-              </Pressable>
-              
-              <Pressable 
-                onPress={() => setSelectedPlan('cinematic')} 
-                style={({ pressed }) => [styles.planCard, selectedPlan === 'cinematic' && styles.planSelected, pressed && { opacity: 0.9 }]}
-              >
-                <Text style={styles.planTitle}>Cinematic</Text>
-                <Text style={styles.planPrice}>$39.99</Text>
-                <Text style={styles.planDuration}>per 2 months</Text>
-                <Text style={styles.planFeatures}>• Ultra HD</Text>
-                <Text style={styles.planFeatures}>• Lifetime Availability</Text>
-                <Text style={styles.planFeatures}>• Any Device</Text>
-                <Text style={styles.planFeatures}>• 24/7 Support</Text>
-              </Pressable>
-            </View>
+            {plansLoading ? (
+              <View style={[styles.planCard, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                <ActivityIndicator color="#e50914" size="small" />
+                <Text style={styles.planTitle}>Loading...</Text>
+              </View>
+            ) : plans.length > 0 ? (
+              <View style={styles.plansGrid}>
+                {plans.map((p: any, idx: number) => {
+                  const pid = String(getPlanId(p) ?? idx);
+                  const selected = selectedPlan === pid;
+                  return (
+                    <Pressable
+                      key={pid}
+                      onPress={() => setSelectedPlan(pid)}
+                      style={({ pressed }) => [styles.planCard, selected && styles.planSelected, pressed && { opacity: 0.9 }]}
+                    >
+                      <Text style={styles.planTitle}>{p.name || p.code || `Plan ${pid}`}</Text>
+                      <Text style={styles.planPrice}>{planPrices[pid] || 'N/A'}</Text>
+                      {p.description ? <Text style={styles.planDuration}>{p.description}</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary || '#999' }]}>No active plans available.</Text>
+            )}
             
             {/* Action button for all plans */}
             <Pressable 
@@ -653,73 +1327,17 @@ export default function ProfileScreen() {
               onPress={async () => {
                 try {
                   await Haptics.selectionAsync();
-                  
-                  const currentPlan = authState.user?.subscription?.plan || 'starter';
-                  
-                  if (selectedPlan === currentPlan) {
-                    Alert.alert('Current Plan', `You are already on the ${currentPlan} plan.`);
+                  if (!authState.isAuthenticated) {
+                    router.push('/auth/signin');
                     return;
                   }
-                  
-                  // Determine if it's an upgrade or downgrade
-                  const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-                  const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
-                  const selectedLevel = planHierarchy[selectedPlan as keyof typeof planHierarchy] || 0;
-                  
-                  if (selectedLevel > currentLevel) {
-                    // Upgrade - Navigate to payment page
-                    router.push('/payment');
-                  } else {
-                    // Downgrade - Show confirmation dialog
-                    Alert.alert(
-                      'Downgrade Subscription',
-                      `Are you sure you want to downgrade from ${currentPlan} to ${selectedPlan}? You will lose access to premium features.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Downgrade',
-                          style: 'destructive',
-                          onPress: async () => {
-                            try {
-                              await updateSubscription(selectedPlan as 'starter' | 'premium' | 'cinematic');
-                              Alert.alert('Subscription Updated', `Successfully downgraded to ${selectedPlan} plan!`);
-                            } catch (error) {
-                              Alert.alert('Error', 'Failed to update subscription. Please try again.');
-                            }
-                          }
-                        }
-                      ]
-                    );
-                  }
+                  router.push('/payment');
                 } catch (error) {
-                  console.error('Navigation error:', error);
                 }
               }}
             >
               <Text style={styles.primaryBtnText}>
-                {(() => {
-                  const currentPlan = authState.user?.subscription?.plan || 'starter';
-                  
-                  if (selectedPlan === currentPlan) {
-                    return `Continue Current Plan`;
-                  }
-                  
-                  // Determine if it's an upgrade or downgrade
-                  const planHierarchy = { 'starter': 0, 'premium': 1, 'cinematic': 2 };
-                  const currentLevel = planHierarchy[currentPlan as keyof typeof planHierarchy] || 0;
-                  const selectedLevel = planHierarchy[selectedPlan as keyof typeof planHierarchy] || 0;
-                  
-                  const planNames = { 'starter': 'Starter', 'premium': 'Premium', 'cinematic': 'Cinematic' };
-                  const selectedPlanName = planNames[selectedPlan as keyof typeof planNames] || selectedPlan;
-                  
-                  if (selectedLevel > currentLevel) {
-                    return `Upgrade to ${selectedPlanName}`;
-                  } else if (selectedLevel < currentLevel) {
-                    return `Downgrade to ${selectedPlanName}`;
-                  } else {
-                    return `Switch to ${selectedPlanName}`;
-                  }
-                })()}
+                {selectedPlan ? `Continue with plan #${selectedPlan}` : 'Select a plan'}
               </Text>
             </Pressable>
           </View>
@@ -739,18 +1357,28 @@ export default function ProfileScreen() {
             </Pressable>
             
             {showBillingHistory && (
-              <View style={styles.billingHistoryContainer}>
+              <ScrollView 
+                style={styles.billingHistoryContainer}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
                 {billingHistory.length > 0 ? (
                   billingHistory.map((billing, index) => (
                     <View key={billing.billingID || index} style={styles.billingItem}>
                       <View style={styles.billingHeader}>
                         <Text style={styles.billingPlan}>{billing.subscriptionPlan.toUpperCase()}</Text>
-                        <Text style={styles.billingAmount}>${billing.amount.toFixed(2)}</Text>
+                        <Text style={styles.billingAmount}>
+                          {billing.amount === null || billing.amount === undefined || Number.isNaN(Number(billing.amount))
+                            ? 'N/A'
+                            : Number(billing.amount) === 0
+                              ? 'Free'
+                              : `${Number(billing.amount)} ${billing.currency || 'VND'}`}
+                        </Text>
                       </View>
                       <Text style={styles.billingMethod}>Payment Method: {billing.paymentMethod}</Text>
                       <Text style={styles.billingStatus}>Status: {billing.status}</Text>
                       <Text style={styles.billingDate}>
-                        {new Date(billing.billingDate).toLocaleDateString()}
+                        {billing.billingDate ? new Date(billing.billingDate).toLocaleDateString() : 'N/A'}
                       </Text>
                       {billing.transactionID && (
                         <Text style={styles.billingTransaction}>
@@ -762,7 +1390,7 @@ export default function ProfileScreen() {
                 ) : (
                   <Text style={styles.noBillingHistory}>No billing history found</Text>
                 )}
-              </View>
+              </ScrollView>
             )}
           </View>
 
@@ -773,17 +1401,73 @@ export default function ProfileScreen() {
               onPress={() => {
                 Alert.alert(
                   'Cancel Subscription',
-                  'Are you sure you want to cancel your subscription? You will lose access to premium features.',
+                  'Are you sure you want to cancel your subscription? Paid plans will be cancelled and you will return to the Starter plan.',
                   [
                     { text: 'Keep Subscription', style: 'cancel' },
                     { 
                       text: 'Cancel Subscription', 
                       style: 'destructive',
-                      onPress: () => {
-                        // TODO: Implement subscription cancellation with FilmZone backend
-                        // const response = await movieAppApi.cancelSubscription();
-                        console.log('Cancel subscription');
-                        Alert.alert('Subscription Cancelled', 'Your subscription has been reset to Starter plan.');
+                      onPress: async () => {
+                        try {
+                          const userId = authState.user?.userID;
+                          if (!userId) {
+                            Alert.alert('Error', 'Missing user info. Please sign in again.');
+                            return;
+                          }
+
+                          // Call cancel subscription API
+                          const cancelRes = await filmzoneApi.cancelSubscription(userId);
+                          const cancelOk = (cancelRes as any).success === true || (cancelRes.errorCode >= 200 && cancelRes.errorCode < 300);
+                          if (!cancelOk) {
+                            Alert.alert('Error', cancelRes.errorMessage || 'Failed to cancel subscription.');
+                            return;
+                          }
+
+                          // Reload latest subscription
+                          try {
+                            const subsRes = await filmzoneApi.getSubscriptionsByUser(userId);
+                            const subsOk = (subsRes as any).success === true || (subsRes.errorCode >= 200 && subsRes.errorCode < 300);
+                            if (subsOk && subsRes.data) {
+                              const subsArr = Array.isArray(subsRes.data) ? subsRes.data : [subsRes.data];
+                              if (subsArr.length > 0) {
+                                const latest = subsArr
+                                  .filter((s: any) => s)
+                                  .sort((a: any, b: any) => {
+                                    const aId = Number(a.subscriptionID ?? a.subscriptionId ?? 0);
+                                    const bId = Number(b.subscriptionID ?? b.subscriptionId ?? 0);
+                                    return bId - aId;
+                                  })[0];
+                                updateUser({ subscription: latest } as any);
+                              } else {
+                                updateUser({ subscription: null } as any);
+                              }
+                            } else {
+                              updateUser({ subscription: null } as any);
+                            }
+                          } catch {
+                            updateUser({ subscription: null } as any);
+                          }
+
+                          // Reset current plan selection (fallback starter/free if available)
+                          const freePrice = priceList.find((p: any) => Number(p.amount) === 0);
+                          const freePlan = freePrice
+                            ? plans.find((pl: any) => String(getPlanId(pl)) === String(freePrice.planID ?? freePrice.planId))
+                            : undefined;
+                          if (freePlan) {
+                            setCurrentPlan(freePlan);
+                            setSelectedPlan(String(getPlanId(freePlan)));
+                          } else {
+                            setCurrentPlan(null);
+                            setSelectedPlan('');
+                          }
+
+                          Alert.alert(
+                            'Subscription Cancelled',
+                            'Your subscription has been cancelled.'
+                          );
+                        } catch (e) {
+                          Alert.alert('Error', 'Failed to cancel subscription. Please try again.');
+                        }
                       }
                     }
                   ]
@@ -857,18 +1541,25 @@ const styles = StyleSheet.create({
   avatarBtnText: { color: '#fff', fontWeight: '700', textAlign: 'center' },
   avatarBtnTextDanger: { color: '#e50914' },
   preferenceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  preferenceLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  preferenceContent: { flex: 1, marginRight: 12 },
+  preferenceLabel: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 2 },
+  preferenceSubtext: { color: '#8e8e93', fontSize: 12, lineHeight: 16 },
+  testNotificationBtn: { backgroundColor: '#e50914', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, marginVertical: 8, alignItems: 'center' },
+  testNotificationBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  errorContainer: { backgroundColor: 'rgba(255, 0, 0, 0.1)', padding: 12, borderRadius: 8, marginTop: 8 },
+  errorText: { color: '#ff4444', fontSize: 12, textAlign: 'center' },
 
   // Subscription styles
-  planCard: { backgroundColor: '#14141b', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: 'transparent' },
-  planActive: { borderColor: '#e50914', backgroundColor: 'rgba(229, 9, 20, 0.1)' },
+  planCard: { backgroundColor: '#14141b', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 2, borderColor: '#1c1c24', alignItems: 'center' },
+  planActive: { borderColor: '#e50914', backgroundColor: 'rgba(229, 9, 20, 0.12)' },
   planSelected: { borderColor: '#e50914' },
   planTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  planPrice: { color: '#ffd166', fontWeight: '700', fontSize: 18, marginTop: 4 },
+  planPrice: { color: '#ffd166', fontWeight: '800', fontSize: 20, marginTop: 4, fontFamily: 'SpaceMono-Regular' },
   planDuration: { color: '#8e8e93', fontSize: 12, marginTop: 2 },
   planStatus: { color: '#c7c7cc', marginTop: 4 },
   planExpiry: { color: '#8e8e93', marginTop: 2, fontSize: 12 },
   planFeatures: { color: '#c7c7cc', marginTop: 4, fontSize: 12 },
+  planDescription: { color: '#c7c7cc', marginTop: 6, fontSize: 12, lineHeight: 16 },
   plansGrid: { flexDirection: 'column' },
   
   // Additional styles for new features
@@ -886,6 +1577,7 @@ const styles = StyleSheet.create({
   overviewStatCard: { flex: 1, minWidth: '30%', padding: 16, borderRadius: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   overviewStatTitle: { fontSize: 12, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
   overviewStatValue: { fontSize: 20, fontWeight: '700', color: '#e50914' },
+  overviewStatFilmValue: { fontSize: 40, fontWeight: '700', color: '#e50914' },
   overviewStatSubtext: { fontSize: 12, fontWeight: '500', marginTop: 4, textAlign: 'center' },
   overviewSection: { paddingHorizontal: 16, paddingVertical: 16 },
   overviewSectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
@@ -906,6 +1598,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1f',
     borderWidth: 1,
     borderColor: 'rgba(229, 9, 20, 0.2)'
+  },
+  expandButton: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e50914',
+  },
+  expandButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   commentContent: {
     flexDirection: 'row',
@@ -965,6 +1671,7 @@ const styles = StyleSheet.create({
   },
   billingHistoryContainer: {
     marginTop: 8,
+    maxHeight: 600, // Enough for ~5 items (each item ~110-120px with padding/margin)
   },
   billingItem: {
     backgroundColor: '#1c1c23',

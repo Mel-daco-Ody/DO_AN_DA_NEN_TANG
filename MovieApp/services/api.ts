@@ -1,6 +1,8 @@
 // API Service for MovieApp
 // This file provides API calls to the .NET backend
 
+import { FilmZoneResponse, LoginResponse } from '../types/api-dto';
+
 interface ApiConfig {
   baseURL: string;
   timeout?: number;
@@ -24,6 +26,7 @@ class MovieAppApi {
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
     };
 
     if (this.token) {
@@ -47,17 +50,72 @@ class MovieAppApi {
     try {
       const response = await fetch(url, config);
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      // Handle 204 No Content responses
+      // Handle 204 No Content
       if (response.status === 204) {
-        return { success: true } as any;
+        return {
+          errorCode: 204,
+          errorMessage: 'No Content',
+          success: true,
+        } as any;
       }
 
-      return await response.json();
+      // Check if response has content
+      const contentType = response.headers.get('content-type') || '';
+      const text = await response.text();
+      
+      // Handle empty response
+      if (!text || text.trim().length === 0) {
+        if (!response.ok) {
+          return {
+            errorCode: response.status,
+            errorMessage: `HTTP ${response.status}: ${response.statusText}`,
+            success: false,
+          } as any;
+        }
+        return {
+          errorCode: response.status,
+          errorMessage: 'Success',
+          success: true,
+        } as any;
+      }
+
+      // Try to parse JSON
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        if (!response.ok) {
+          throw new Error(`Invalid JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+        }
+        return {
+          errorCode: response.status,
+          errorMessage: 'Success',
+          success: true,
+          data: text,
+        } as any;
+      }
+      
+      if (!response.ok) {
+        return {
+          errorCode: response.status,
+          errorMessage: data.errorMessage || data.message || `HTTP ${response.status}: ${response.statusText}`,
+          success: false,
+          data: undefined,
+        } as any;
+      }
+
+      // If response already has FilmZoneResponse format, return as is
+      if (data.errorCode !== undefined) {
+        return data as T;
+      }
+
+      // Wrap response in FilmZoneResponse format
+      return {
+        errorCode: response.status,
+        errorMessage: 'Success',
+        success: true,
+        data: data,
+      } as any;
     } catch (error) {
       console.error('API request failed:', error);
       throw error;
@@ -82,7 +140,7 @@ class MovieAppApi {
   }
 
   async login(userName: string, password: string) {
-    const response = await this.request<FilmZoneResponse<LoginResponse>>('/login/userLogin', {
+    const response = await this.request<FilmZoneResponse<LoginResponse>>('/login/login/mobile', {
       method: 'POST',
       body: JSON.stringify({ userName, password }),
     });
@@ -330,7 +388,7 @@ class MovieAppApi {
 
 // Create API instance
 export const movieAppApi = new MovieAppApi({
-  baseURL: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:6000',
+  baseURL: process.env.EXPO_PUBLIC_API_URL || 'https://filmzone-api.koyeb.app',
 });
 
 export default movieAppApi;

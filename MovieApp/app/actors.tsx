@@ -3,6 +3,9 @@ import { View, Text, ScrollView, StyleSheet, Pressable, FlatList, Dimensions } f
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
+import { ListSkeleton } from '../components/SkeletonPlaceholder';
+import { EmptyState } from '../components/EmptyState';
+import { AnimatedCard } from '../components/AnimatedPressable';
 
 const { width } = Dimensions.get('window');
 
@@ -90,8 +93,8 @@ export default function ActorsScreen() {
   useEffect(() => {
     const loadActors = async () => {
       try {
-        const { movieAppApi } = await import('../services/mock-api');
-        const response = await movieAppApi.getAllActors();
+        const { filmzoneApi } = await import('../services/filmzone-api');
+        const response = await filmzoneApi.getAllPersons();
         if (response.errorCode === 200) {
           setFilteredActors(response.data);
         } else {
@@ -99,7 +102,6 @@ export default function ActorsScreen() {
           setFilteredActors(actorsData);
         }
       } catch (error) {
-        console.error('Error loading actors:', error);
         // Fallback to mock data
         setFilteredActors(actorsData);
       } finally {
@@ -110,30 +112,40 @@ export default function ActorsScreen() {
     loadActors();
   }, []);
 
-  const filteredActorsList = filteredActors.filter(actor =>
-    actor.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    actor.career.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredActorsList = filteredActors.filter(actor => {
+    const name = (actor.fullName || '').toLowerCase();
+    const career = (actor.career || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
+    return name.includes(q) || career.includes(q);
+  });
 
-  const renderActorItem = ({ item }: { item: any }) => (
-    <Pressable 
-      style={styles.actorCard}
-      onPress={() => router.push(`/actor/${item.personID}` as any)}
-    >
-      <ImageWithPlaceholder source={{ uri: item.avatar }} style={styles.actorImage} showRedBorder={false} />
-      <View style={styles.actorInfo}>
-        <Text style={styles.actorName}>{item.fullName}</Text>
-        <Text style={styles.actorCareer}>{item.career}</Text>
-        <Text style={styles.actorAge}>Age: {item.age}</Text>
-        <Text style={styles.actorMovies}>{item.totalMovies} movies</Text>
-        <View style={styles.genresContainer}>
-          {item.genres.slice(0, 2).map((genre: string, index: number) => (
-            <Text key={index} style={styles.genreTag}>{genre}</Text>
-          ))}
+  const renderActorItem = ({ item }: { item: any }) => {
+    const genres = Array.isArray(item.genres)
+      ? item.genres
+      : Array.isArray(item.tags)
+        ? item.tags.map((t: any) => t.tagName || t)
+        : [];
+
+    return (
+      <Pressable 
+        style={styles.actorCard}
+        onPress={() => router.push(`/actor/${item.personID}` as any)}
+      >
+        <ImageWithPlaceholder source={{ uri: item.avatar }} style={styles.actorImage} showRedBorder={false} />
+        <View style={styles.actorInfo}>
+          <Text style={styles.actorName}>{item.fullName}</Text>
+          <Text style={styles.actorCareer}>{item.career}</Text>
+          <Text style={styles.actorAge}>Age: {item.age}</Text>
+          <Text style={styles.actorMovies}>{item.totalMovies} movies</Text>
+          <View style={styles.genresContainer}>
+            {genres.slice(0, 2).map((genre: string, index: number) => (
+              <Text key={index} style={styles.genreTag}>{genre}</Text>
+            ))}
+          </View>
         </View>
-      </View>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
 
   if (isLoading) {
     return (

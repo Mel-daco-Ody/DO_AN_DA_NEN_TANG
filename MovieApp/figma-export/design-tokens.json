@@ -1,0 +1,1264 @@
+{
+  "metadata": {
+    "generatedAt": "2025-12-06T13:11:44.019Z",
+    "source": "React Native Codebase",
+    "totalComponents": 36,
+    "totalColors": 68,
+    "totalSpacing": 46
+  },
+  "tokens": {
+    "colors": [
+      {
+        "name": "rgba255-255-255-0.05",
+        "value": "rgba(255,255,255,0.05)",
+        "usage": 3,
+        "files": [
+          "components\\EmptyState.tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "fff",
+        "value": "#fff",
+        "usage": 30,
+        "files": [
+          "components\\EmptyState.tsx",
+          "components\\ErrorState.tsx",
+          "components\\FloatingSigninButton.tsx",
+          "components\\Header.tsx",
+          "components\\home\\FeaturedMovies.tsx"
+        ]
+      },
+      {
+        "name": "999",
+        "value": "#999",
+        "usage": 2,
+        "files": [
+          "components\\EmptyState.tsx",
+          "components\\ErrorState.tsx"
+        ]
+      },
+      {
+        "name": "e50914",
+        "value": "#e50914",
+        "usage": 33,
+        "files": [
+          "components\\EmptyState.tsx",
+          "components\\ErrorState.tsx",
+          "components\\FlixGoLogo.tsx",
+          "components\\FloatingSigninButton.tsx",
+          "components\\Header.tsx"
+        ]
+      },
+      {
+        "name": "b8070f",
+        "value": "#b8070f",
+        "usage": 3,
+        "files": [
+          "components\\EmptyState.tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba255- 107- 107- 0.1",
+        "value": "rgba(255, 107, 107, 0.1)",
+        "usage": 1,
+        "files": [
+          "components\\ErrorState.tsx"
+        ]
+      },
+      {
+        "name": "666",
+        "value": "#666",
+        "usage": 3,
+        "files": [
+          "components\\ErrorState.tsx",
+          "app\\payment.tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "rgba0- 0- 0- 0.7",
+        "value": "rgba(0, 0, 0, 0.7)",
+        "usage": 1,
+        "files": [
+          "components\\FloatingSigninButton.tsx"
+        ]
+      },
+      {
+        "name": "rgba0- 0- 0- 0.8",
+        "value": "rgba(0, 0, 0, 0.8)",
+        "usage": 1,
+        "files": [
+          "components\\FloatingSigninButton.tsx"
+        ]
+      },
+      {
+        "name": "ff6b6b",
+        "value": "#ff6b6b",
+        "usage": 1,
+        "files": [
+          "components\\FloatingSigninButton.tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.3",
+        "value": "rgba(229, 9, 20, 0.3)",
+        "usage": 3,
+        "files": [
+          "components\\FloatingSigninButton.tsx",
+          "components\\SplashScreen.tsx",
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.6",
+        "value": "rgba(229, 9, 20, 0.6)",
+        "usage": 1,
+        "files": [
+          "components\\FloatingSigninButton.tsx"
+        ]
+      },
+      {
+        "name": "rgba0- 0- 0- 0.5",
+        "value": "rgba(0, 0, 0, 0.5)",
+        "usage": 1,
+        "files": [
+          "components\\FloatingSigninButton.tsx"
+        ]
+      },
+      {
+        "name": "rgba255-255-255-0.1",
+        "value": "rgba(255,255,255,0.1)",
+        "usage": 6,
+        "files": [
+          "components\\Header.tsx",
+          "components\\SkeletonPlaceholder.tsx",
+          "app\\(tabs)\\index.tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "2b2b31",
+        "value": "#2b2b31",
+        "usage": 22,
+        "files": [
+          "components\\Header.tsx",
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\RecentlyUpdated.tsx",
+          "components\\home\\TrendingMovies.tsx",
+          "components\\MfaVerification.tsx"
+        ]
+      },
+      {
+        "name": "rgba255-255-255-0.06",
+        "value": "rgba(255,255,255,0.06)",
+        "usage": 11,
+        "files": [
+          "components\\Header.tsx",
+          "app\\about-us.tsx",
+          "app\\actor\\[id].tsx",
+          "app\\actors.tsx",
+          "app\\category\\[genre].tsx"
+        ]
+      },
+      {
+        "name": "1c1c23",
+        "value": "#1c1c23",
+        "usage": 12,
+        "files": [
+          "components\\Header.tsx",
+          "components\\home\\RecentlyUpdated.tsx",
+          "components\\ImageWithPlaceholder.tsx",
+          "components\\LogoImage.tsx",
+          "components\\OptimizedImage.tsx"
+        ]
+      },
+      {
+        "name": "14141b",
+        "value": "#14141b",
+        "usage": 11,
+        "files": [
+          "components\\Header.tsx",
+          "app\\actors.tsx",
+          "app\\auth\\forgot.tsx",
+          "app\\auth\\signin.tsx",
+          "app\\auth\\signup.tsx"
+        ]
+      },
+      {
+        "name": "2a2a37",
+        "value": "#2a2a37",
+        "usage": 3,
+        "files": [
+          "components\\Header.tsx",
+          "app\\auth\\signin.tsx",
+          "app\\auth\\signup.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.5",
+        "value": "rgba(0,0,0,0.5)",
+        "usage": 4,
+        "files": [
+          "components\\Header.tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "121219",
+        "value": "#121219",
+        "usage": 12,
+        "files": [
+          "components\\Header.tsx",
+          "app\\(tabs)\\index.tsx",
+          "app\\actor\\[id].tsx",
+          "app\\actors.tsx",
+          "app\\auth\\forgot.tsx"
+        ]
+      },
+      {
+        "name": "000",
+        "value": "#000",
+        "usage": 12,
+        "files": [
+          "components\\Header.tsx",
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\RecentlyUpdated.tsx",
+          "components\\home\\TrendingMovies.tsx",
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "c7c7cc",
+        "value": "#c7c7cc",
+        "usage": 9,
+        "files": [
+          "components\\Header.tsx",
+          "app\\(tabs)\\index.tsx",
+          "app\\auth\\forgot.tsx",
+          "app\\auth\\signin.tsx",
+          "app\\auth\\signup.tsx"
+        ]
+      },
+      {
+        "name": "8e8e93",
+        "value": "#8e8e93",
+        "usage": 13,
+        "files": [
+          "components\\Header.tsx",
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\RecentlyUpdated.tsx",
+          "components\\home\\TrendingMovies.tsx",
+          "components\\MfaVerification.tsx"
+        ]
+      },
+      {
+        "name": "ffd166",
+        "value": "#ffd166",
+        "usage": 16,
+        "files": [
+          "components\\Header.tsx",
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\HeroCarousel.tsx",
+          "components\\home\\NowWatching.tsx",
+          "components\\home\\RecentlyUpdated.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.2",
+        "value": "rgba(0,0,0,0.2)",
+        "usage": 3,
+        "files": [
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\TrendingMovies.tsx",
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.7",
+        "value": "rgba(0,0,0,0.7)",
+        "usage": 9,
+        "files": [
+          "components\\home\\FeaturedMovies.tsx",
+          "components\\home\\TrendingMovies.tsx",
+          "components\\ImageWithPlaceholder.tsx",
+          "components\\LogoImage.tsx",
+          "components\\OptimizedImage.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.35",
+        "value": "rgba(0,0,0,0.35)",
+        "usage": 1,
+        "files": [
+          "components\\home\\HeroCarousel.tsx"
+        ]
+      },
+      {
+        "name": "d1d1d6",
+        "value": "#d1d1d6",
+        "usage": 2,
+        "files": [
+          "components\\home\\HeroCarousel.tsx",
+          "app\\+not-found.tsx"
+        ]
+      },
+      {
+        "name": "rgba255-255-255-0.7",
+        "value": "rgba(255,255,255,0.7)",
+        "usage": 1,
+        "files": [
+          "components\\home\\HeroCarousel.tsx"
+        ]
+      },
+      {
+        "name": "a0a0a6",
+        "value": "#a0a0a6",
+        "usage": 4,
+        "files": [
+          "components\\home\\NowWatching.tsx",
+          "components\\home\\RecentlyUpdated.tsx",
+          "components\\SplashScreen.tsx",
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "292935",
+        "value": "#292935",
+        "usage": 2,
+        "files": [
+          "components\\home\\RecentlyUpdated.tsx",
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "b0b0b8",
+        "value": "#b0b0b8",
+        "usage": 2,
+        "files": [
+          "components\\home\\RecentlyUpdated.tsx",
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "1a1a1a",
+        "value": "#1a1a1a",
+        "usage": 2,
+        "files": [
+          "components\\MfaVerification.tsx",
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "ffffff",
+        "value": "#ffffff",
+        "usage": 2,
+        "files": [
+          "components\\MfaVerification.tsx",
+          "components\\SplashScreen.tsx"
+        ]
+      },
+      {
+        "name": "3a3a3a",
+        "value": "#3a3a3a",
+        "usage": 3,
+        "files": [
+          "components\\MfaVerification.tsx",
+          "components\\SkeletonPlaceholder.tsx",
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.8",
+        "value": "rgba(0,0,0,0.8)",
+        "usage": 4,
+        "files": [
+          "components\\PullToRefresh.tsx",
+          "app\\(tabs)\\index.tsx",
+          "app\\payment.tsx",
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "2a2a2a",
+        "value": "#2a2a2a",
+        "usage": 2,
+        "files": [
+          "components\\SkeletonPlaceholder.tsx",
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "666666",
+        "value": "#666666",
+        "usage": 1,
+        "files": [
+          "components\\SplashScreen.tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.2",
+        "value": "rgba(229, 9, 20, 0.2)",
+        "usage": 2,
+        "files": [
+          "components\\SplashScreen.tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "444",
+        "value": "#444",
+        "usage": 1,
+        "files": [
+          "app\\(tabs)\\index.tsx"
+        ]
+      },
+      {
+        "name": "1a1a1f",
+        "value": "#1a1a1f",
+        "usage": 4,
+        "files": [
+          "app\\(tabs)\\index.tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "rgba255-255-255-0.2",
+        "value": "rgba(255,255,255,0.2)",
+        "usage": 2,
+        "files": [
+          "app\\(tabs)\\index.tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.6",
+        "value": "rgba(0,0,0,0.6)",
+        "usage": 4,
+        "files": [
+          "app\\+not-found.tsx",
+          "app\\auth\\forgot.tsx",
+          "app\\auth\\signin.tsx",
+          "app\\auth\\signup.tsx"
+        ]
+      },
+      {
+        "name": "c7c7c7",
+        "value": "#c7c7c7",
+        "usage": 6,
+        "files": [
+          "app\\about-us.tsx",
+          "app\\actor\\[id].tsx",
+          "app\\actors.tsx",
+          "app\\contacts.tsx",
+          "app\\help-center.tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.4",
+        "value": "rgba(0,0,0,0.4)",
+        "usage": 3,
+        "files": [
+          "app\\actor\\[id].tsx",
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.3",
+        "value": "rgba(0,0,0,0.3)",
+        "usage": 4,
+        "files": [
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx",
+          "app\\moviebox.tsx",
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "e0e0e0",
+        "value": "#e0e0e0",
+        "usage": 2,
+        "files": [
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.1",
+        "value": "rgba(229, 9, 20, 0.1)",
+        "usage": 4,
+        "files": [
+          "app\\details\\movie\\[id].tsx",
+          "app\\details\\series\\[id].tsx",
+          "app\\payment.tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "rgba229-9-20-0.1",
+        "value": "rgba(229,9,20,0.1)",
+        "usage": 1,
+        "files": [
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.05",
+        "value": "rgba(229, 9, 20, 0.05)",
+        "usage": 1,
+        "files": [
+          "app\\details\\series\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.9",
+        "value": "rgba(229, 9, 20, 0.9)",
+        "usage": 2,
+        "files": [
+          "app\\moviebox.tsx",
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "2a1a1a",
+        "value": "#2a1a1a",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "rgba139- 69- 19- 0.1",
+        "value": "rgba(139, 69, 19, 0.1)",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "8B4513",
+        "value": "#8B4513",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "4CAF50",
+        "value": "#4CAF50",
+        "usage": 2,
+        "files": [
+          "app\\payment.tsx",
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "rgba76- 175- 80- 0.1",
+        "value": "rgba(76, 175, 80, 0.1)",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "FF9800",
+        "value": "#FF9800",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "rgba255- 152- 0- 0.1",
+        "value": "rgba(255, 152, 0, 0.1)",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "F44336",
+        "value": "#F44336",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "rgba244- 67- 54- 0.1",
+        "value": "rgba(244, 67, 54, 0.1)",
+        "usage": 1,
+        "files": [
+          "app\\payment.tsx"
+        ]
+      },
+      {
+        "name": "rgba255-255-255-0.3",
+        "value": "rgba(255,255,255,0.3)",
+        "usage": 1,
+        "files": [
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba229- 9- 20- 0.25",
+        "value": "rgba(229, 9, 20, 0.25)",
+        "usage": 1,
+        "files": [
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba0-0-0-0.9",
+        "value": "rgba(0,0,0,0.9)",
+        "usage": 1,
+        "files": [
+          "app\\player\\[id].tsx"
+        ]
+      },
+      {
+        "name": "rgba255- 0- 0- 0.1",
+        "value": "rgba(255, 0, 0, 0.1)",
+        "usage": 1,
+        "files": [
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "ff4444",
+        "value": "#ff4444",
+        "usage": 1,
+        "files": [
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "28a745",
+        "value": "#28a745",
+        "usage": 1,
+        "files": [
+          "app\\profile.tsx"
+        ]
+      },
+      {
+        "name": "333",
+        "value": "#333",
+        "usage": 1,
+        "files": [
+          "app\\profile.tsx"
+        ]
+      }
+    ],
+    "typography": {
+      "fontSize": [
+        {
+          "value": "10",
+          "unit": "px",
+          "usage": 11
+        },
+        {
+          "value": "11",
+          "unit": "px",
+          "usage": 9
+        },
+        {
+          "value": "12",
+          "unit": "px",
+          "usage": 21
+        },
+        {
+          "value": "13",
+          "unit": "px",
+          "usage": 4
+        },
+        {
+          "value": "14",
+          "unit": "px",
+          "usage": 21
+        },
+        {
+          "value": "15",
+          "unit": "px",
+          "usage": 1
+        },
+        {
+          "value": "16",
+          "unit": "px",
+          "usage": 20
+        },
+        {
+          "value": "18",
+          "unit": "px",
+          "usage": 20
+        },
+        {
+          "value": "20",
+          "unit": "px",
+          "usage": 8
+        },
+        {
+          "value": "24",
+          "unit": "px",
+          "usage": 8
+        },
+        {
+          "value": "28",
+          "unit": "px",
+          "usage": 4
+        },
+        {
+          "value": "32",
+          "unit": "px",
+          "usage": 2
+        },
+        {
+          "value": "88",
+          "unit": "px",
+          "usage": 1
+        }
+      ],
+      "fontWeight": []
+    },
+    "spacing": [
+      {
+        "value": 0,
+        "unit": "px",
+        "usage": 25
+      },
+      {
+        "value": 1,
+        "unit": "px",
+        "usage": 23
+      },
+      {
+        "value": 2,
+        "unit": "px",
+        "usage": 25
+      },
+      {
+        "value": 3,
+        "unit": "px",
+        "usage": 9
+      },
+      {
+        "value": 4,
+        "unit": "px",
+        "usage": 19
+      },
+      {
+        "value": 5,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 6,
+        "unit": "px",
+        "usage": 9
+      },
+      {
+        "value": 8,
+        "unit": "px",
+        "usage": 28
+      },
+      {
+        "value": 10,
+        "unit": "px",
+        "usage": 14
+      },
+      {
+        "value": 11,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 12,
+        "unit": "px",
+        "usage": 22
+      },
+      {
+        "value": 14,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 15,
+        "unit": "px",
+        "usage": 5
+      },
+      {
+        "value": 16,
+        "unit": "px",
+        "usage": 26
+      },
+      {
+        "value": 18,
+        "unit": "px",
+        "usage": 3
+      },
+      {
+        "value": 20,
+        "unit": "px",
+        "usage": 19
+      },
+      {
+        "value": 22,
+        "unit": "px",
+        "usage": 5
+      },
+      {
+        "value": 24,
+        "unit": "px",
+        "usage": 12
+      },
+      {
+        "value": 26,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 28,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 30,
+        "unit": "px",
+        "usage": 4
+      },
+      {
+        "value": 32,
+        "unit": "px",
+        "usage": 4
+      },
+      {
+        "value": 34,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 35,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 36,
+        "unit": "px",
+        "usage": 10
+      },
+      {
+        "value": 40,
+        "unit": "px",
+        "usage": 6
+      },
+      {
+        "value": 42,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 44,
+        "unit": "px",
+        "usage": 7
+      },
+      {
+        "value": 50,
+        "unit": "px",
+        "usage": 12
+      },
+      {
+        "value": 52,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 60,
+        "unit": "px",
+        "usage": 7
+      },
+      {
+        "value": 64,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 70,
+        "unit": "px",
+        "usage": 2
+      },
+      {
+        "value": 80,
+        "unit": "px",
+        "usage": 8
+      },
+      {
+        "value": 90,
+        "unit": "px",
+        "usage": 1
+      },
+      {
+        "value": 100,
+        "unit": "px",
+        "usage": 4
+      },
+      {
+        "value": 110,
+        "unit": "px",
+        "usage": 6
+      },
+      {
+        "value": 120,
+        "unit": "px",
+        "usage": 6
+      },
+      {
+        "value": 136,
+        "unit": "px",
+        "usage": 3
+      },
+      {
+        "value": 150,
+        "unit": "px",
+        "usage": 4
+      },
+      {
+        "value": 160,
+        "unit": "px",
+        "usage": 4
+      },
+      {
+        "value": 180,
+        "unit": "px",
+        "usage": 2
+      },
+      {
+        "value": 188,
+        "unit": "px",
+        "usage": 3
+      },
+      {
+        "value": 200,
+        "unit": "px",
+        "usage": 12
+      },
+      {
+        "value": 300,
+        "unit": "px",
+        "usage": 5
+      },
+      {
+        "value": 400,
+        "unit": "px",
+        "usage": 1
+      }
+    ],
+    "borderRadius": [
+      {
+        "value": "0",
+        "usage": 2
+      },
+      {
+        "value": "2",
+        "usage": 3
+      },
+      {
+        "value": "3",
+        "usage": 2
+      },
+      {
+        "value": "4",
+        "usage": 9
+      },
+      {
+        "value": "6",
+        "usage": 8
+      },
+      {
+        "value": "8",
+        "usage": 24
+      },
+      {
+        "value": "10",
+        "usage": 15
+      },
+      {
+        "value": "12",
+        "usage": 20
+      },
+      {
+        "value": "14",
+        "usage": 1
+      },
+      {
+        "value": "16",
+        "usage": 1
+      },
+      {
+        "value": "17",
+        "usage": 1
+      },
+      {
+        "value": "18",
+        "usage": 2
+      },
+      {
+        "value": "20",
+        "usage": 4
+      },
+      {
+        "value": "25",
+        "usage": 1
+      },
+      {
+        "value": "26",
+        "usage": 1
+      },
+      {
+        "value": "30",
+        "usage": 2
+      },
+      {
+        "value": "32",
+        "usage": 1
+      },
+      {
+        "value": "40",
+        "usage": 3
+      },
+      {
+        "value": "50",
+        "usage": 2
+      },
+      {
+        "value": "999",
+        "usage": 2
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "EmptyState",
+      "file": "components\\EmptyState.tsx",
+      "hasStyles": true,
+      "styleCount": 40
+    },
+    {
+      "name": "ErrorState",
+      "file": "components\\ErrorState.tsx",
+      "hasStyles": true,
+      "styleCount": 63
+    },
+    {
+      "name": "FlixGoLogo",
+      "file": "components\\FlixGoLogo.tsx",
+      "hasStyles": true,
+      "styleCount": 11
+    },
+    {
+      "name": "FloatingSigninButton",
+      "file": "components\\FloatingSigninButton.tsx",
+      "hasStyles": true,
+      "styleCount": 60
+    },
+    {
+      "name": "Header",
+      "file": "components\\Header.tsx",
+      "hasStyles": true,
+      "styleCount": 252
+    },
+    {
+      "name": "FeaturedMovies",
+      "file": "components\\home\\FeaturedMovies.tsx",
+      "hasStyles": true,
+      "styleCount": 79
+    },
+    {
+      "name": "HeroCarousel",
+      "file": "components\\home\\HeroCarousel.tsx",
+      "hasStyles": true,
+      "styleCount": 66
+    },
+    {
+      "name": "NowWatching",
+      "file": "components\\home\\NowWatching.tsx",
+      "hasStyles": true,
+      "styleCount": 37
+    },
+    {
+      "name": "RecentlyUpdated",
+      "file": "components\\home\\RecentlyUpdated.tsx",
+      "hasStyles": true,
+      "styleCount": 133
+    },
+    {
+      "name": "TrendingMovies",
+      "file": "components\\home\\TrendingMovies.tsx",
+      "hasStyles": true,
+      "styleCount": 82
+    },
+    {
+      "name": "ImageWithPlaceholder",
+      "file": "components\\ImageWithPlaceholder.tsx",
+      "hasStyles": true,
+      "styleCount": 31
+    },
+    {
+      "name": "LogoImage",
+      "file": "components\\LogoImage.tsx",
+      "hasStyles": true,
+      "styleCount": 31
+    },
+    {
+      "name": "MfaVerification",
+      "file": "components\\MfaVerification.tsx",
+      "hasStyles": true,
+      "styleCount": 59
+    },
+    {
+      "name": "OptimizedImage",
+      "file": "components\\OptimizedImage.tsx",
+      "hasStyles": true,
+      "styleCount": 31
+    },
+    {
+      "name": "PullToRefresh",
+      "file": "components\\PullToRefresh.tsx",
+      "hasStyles": true,
+      "styleCount": 19
+    },
+    {
+      "name": "SkeletonPlaceholder",
+      "file": "components\\SkeletonPlaceholder.tsx",
+      "hasStyles": true,
+      "styleCount": 55
+    },
+    {
+      "name": "CustomSplashScreen",
+      "file": "components\\SplashScreen.tsx",
+      "hasStyles": true,
+      "styleCount": 220
+    },
+    {
+      "name": "WaveAnimation",
+      "file": "components\\WaveAnimation.tsx",
+      "hasStyles": true,
+      "styleCount": 6
+    },
+    {
+      "name": "HomeScreen",
+      "file": "app\\(tabs)\\index.tsx",
+      "hasStyles": true,
+      "styleCount": 409
+    },
+    {
+      "name": "NotFoundScreen",
+      "file": "app\\+not-found.tsx",
+      "hasStyles": true,
+      "styleCount": 8
+    },
+    {
+      "name": "AboutUsScreen",
+      "file": "app\\about-us.tsx",
+      "hasStyles": true,
+      "styleCount": 17
+    },
+    {
+      "name": "ActorScreen",
+      "file": "app\\actor\\[id].tsx",
+      "hasStyles": true,
+      "styleCount": 47
+    },
+    {
+      "name": "ActorsScreen",
+      "file": "app\\actors.tsx",
+      "hasStyles": true,
+      "styleCount": 38
+    },
+    {
+      "name": "ForgotScreen",
+      "file": "app\\auth\\forgot.tsx",
+      "hasStyles": true,
+      "styleCount": 11
+    },
+    {
+      "name": "SignInScreen",
+      "file": "app\\auth\\signin.tsx",
+      "hasStyles": true,
+      "styleCount": 21
+    },
+    {
+      "name": "SignUpScreen",
+      "file": "app\\auth\\signup.tsx",
+      "hasStyles": true,
+      "styleCount": 15
+    },
+    {
+      "name": "CategoryScreen",
+      "file": "app\\category\\[genre].tsx",
+      "hasStyles": true,
+      "styleCount": 14
+    },
+    {
+      "name": "ContactsScreen",
+      "file": "app\\contacts.tsx",
+      "hasStyles": true,
+      "styleCount": 24
+    },
+    {
+      "name": "MovieDetailsScreen",
+      "file": "app\\details\\movie\\[id].tsx",
+      "hasStyles": true,
+      "styleCount": 237
+    },
+    {
+      "name": "SeriesDetailsScreen",
+      "file": "app\\details\\series\\[id].tsx",
+      "hasStyles": true,
+      "styleCount": 402
+    },
+    {
+      "name": "HelpCenterScreen",
+      "file": "app\\help-center.tsx",
+      "hasStyles": true,
+      "styleCount": 24
+    },
+    {
+      "name": "MovieBoxScreen",
+      "file": "app\\moviebox.tsx",
+      "hasStyles": true,
+      "styleCount": 125
+    },
+    {
+      "name": "PaymentServiceScreen",
+      "file": "app\\payment.tsx",
+      "hasStyles": true,
+      "styleCount": 245
+    },
+    {
+      "name": "VideoPlayerScreen",
+      "file": "app\\player\\[id].tsx",
+      "hasStyles": true,
+      "styleCount": 168
+    },
+    {
+      "name": "PrivacyPolicyScreen",
+      "file": "app\\privacy-policy.tsx",
+      "hasStyles": true,
+      "styleCount": 11
+    },
+    {
+      "name": "ProfileScreen",
+      "file": "app\\profile.tsx",
+      "hasStyles": true,
+      "styleCount": 177
+    }
+  ]
+}

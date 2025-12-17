@@ -1,14 +1,16 @@
+import React from 'react';
 import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, Dimensions, TextInput, Alert, FlatList, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import * as React from 'react';
 import ImageWithPlaceholder from '../../../components/ImageWithPlaceholder';
 import FlixGoLogo from '../../../components/FlixGoLogo';
 import WaveAnimation from '../../../components/WaveAnimation';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
+import { useSavedMoviesContext } from '../../../contexts/SavedMoviesContext';
 import * as Haptics from 'expo-haptics';
+import filmzoneApi from '../../../services/filmzone-api';
 
 function safe(value?: string | string[], fallback: string = 'N/A') {
   if (!value) return fallback;
@@ -16,13 +18,13 @@ function safe(value?: string | string[], fallback: string = 'N/A') {
   return value;
 }
 
-// Episodes will be loaded from FilmZone backend
-const mockSeasonsData: any = {};
 
 export default function SeriesDetailsScreen() {
   const { id, title, cover, categories, rating, year, duration, country, cast, description, episodes } = useLocalSearchParams();
   const { authState } = useAuth();
   const { t } = useLanguage();
+  const { refreshSavedMovies, isMovieSaved, addSavedMovie, removeSavedMovie } = useSavedMoviesContext();
+  const seriesId = parseInt(id as string);
   const [commentText, setCommentText] = React.useState('');
   const [comments, setComments] = React.useState<any[]>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
@@ -30,11 +32,18 @@ export default function SeriesDetailsScreen() {
   const [seriesData, setSeriesData] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [latestWatched, setLatestWatched] = React.useState<any>(null);
-  const [isSaved, setIsSaved] = React.useState(false);
+  // Use context to get saved status instead of local state
+  const isSaved = isMovieSaved(seriesId);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [movieData, setMovieData] = React.useState<any>(null);
+  const [actors, setActors] = React.useState<any[]>([]);
+  const [tags, setTags] = React.useState<any[]>([]);
   const [showSeasonDropdown, setShowSeasonDropdown] = React.useState(false);
   const [userRating, setUserRating] = React.useState<any>(null);
+  // Store user data for comments (userID -> UserDTO)
+  const [commentUsers, setCommentUsers] = React.useState<Map<number, any>>(new Map());
+  // Current user data from /user/me
+  const [currentUser, setCurrentUser] = React.useState<any>(null);
   const width = Dimensions.get('window').width;
 
   // Load series data from FilmZone backend
@@ -44,53 +53,166 @@ export default function SeriesDetailsScreen() {
       
       setIsLoading(true);
       try {
-        const { movieAppApi } = await import('../../../services/mock-api');
-        
-        // Load movie details from mockdata
-        const movieResponse = await movieAppApi.getMovieById(parseInt(id as string));
-        if (movieResponse.errorCode === 200) {
+        // Load movie details
+        const movieResponse = await filmzoneApi.getMovieById(parseInt(id as string));
+        if (movieResponse.success) {
           setMovieData(movieResponse.data);
         }
+
+        // Load actors via MoviePerson
+        try {
+          const actorsResponse = await filmzoneApi.getPersonsByMovie(parseInt(id as string));
+          const ok = actorsResponse.errorCode >= 200 && actorsResponse.errorCode < 300 && actorsResponse.data;
+          if (ok) {
+            setActors(actorsResponse.data || []);
+          } else {
+            setActors([]);
+          }
+        } catch {
+          setActors([]);
+        }
+
+        // Load tags (genres) via MovieTag
+        try {
+          const tagsResponse = await filmzoneApi.getTagsByMovie(parseInt(id as string));
+          const ok = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
+          if (ok) {
+            setTags(tagsResponse.data || []);
+          } else {
+            setTags([]);
+          }
+        } catch {
+          setTags([]);
+        }
         
-        // Load episodes
-        const episodesResponse = await movieAppApi.getEpisodesByMovie(parseInt(id as string));
-        if (episodesResponse.errorCode === 200 && episodesResponse.data) {
-          setSeriesData(episodesResponse.data);
+        // Load episodes from Episode API, then enrich each episode with sources from EpisodeSource API
+        const episodesResponse = await filmzoneApi.getEpisodesByMovie(parseInt(id as string));
+        if (episodesResponse.success && episodesResponse.data) {
+          const seasonsWithSources = await Promise.all(
+            (episodesResponse.data.seasons || []).map(async (season: any) => {
+              const episodesWithSources = await Promise.all(
+                (season.episodes || []).map(async (episode: any) => {
+                  const sourcesResponse = await filmzoneApi.getEpisodeSourcesByEpisodeId(episode.id);
+                  const episodeSources = sourcesResponse.success && sourcesResponse.data ? sourcesResponse.data : [];
+                  const primarySource = episodeSources[0];
+                  
+                  return {
+                    ...episode,
+                    videoUrl: primarySource?.sourceUrl || episode.videoUrl,
+                    sourceQuality: primarySource?.quality,
+                    sourceLanguage: primarySource?.language,
+                    sources: episodeSources.length ? episodeSources : episode.sources,
+                  };
+                })
+              );
+
+              return {
+                ...season,
+                episodes: episodesWithSources,
+              };
+            })
+          );
+
+          setSeriesData({
+            ...episodesResponse.data,
+            seasons: seasonsWithSources,
+          });
           
           // Auto-select first season if no season is selected
-          if (episodesResponse.data.seasons && episodesResponse.data.seasons.length > 0 && !selectedSeason) {
-            setSelectedSeason(episodesResponse.data.seasons[0].id);
+          if (seasonsWithSources.length > 0 && !selectedSeason) {
+            setSelectedSeason(seasonsWithSources[0].id);
           }
         }
         
         // Load comments
-        const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
-        if (commentsResponse.errorCode === 200) {
-          setComments(commentsResponse.data || []);
+        const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+        const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+        if (commentsOk && commentsResponse.data) {
+          const commentsData = commentsResponse.data || [];
+          setComments(commentsData);
+          
+          // Fetch user data for each unique userID in comments
+          // Filter out invalid userIDs (0, null, undefined, negative)
+          const uniqueUserIDs = [...new Set(
+            commentsData
+              .map((c: any) => c.userID)
+              .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+              .map((id: any) => Number(id))
+          )];
+          
+          console.log('Comments loaded:', commentsData.length);
+          console.log('Unique userIDs to fetch:', uniqueUserIDs);
+          
+          const userDataMap = new Map<number, any>();
+          
+          // Fetch user data for all unique userIDs
+          await Promise.all(
+            uniqueUserIDs.map(async (userID: number) => {
+              try {
+                const userResponse = await filmzoneApi.getUserById(userID);
+                const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                if (userOk && userResponse.data) {
+                  userDataMap.set(userID, userResponse.data);
+                  console.log(`User data loaded for userID ${userID}:`, userResponse.data.userName || userResponse.data.name);
+                } else {
+                  console.log(`Failed to load user data for userID ${userID}:`, userResponse.errorMessage || 'Unknown error');
+                }
+              } catch (err) {
+                console.error(`Error loading user data for userID ${userID}:`, err);
+              }
+            })
+          );
+          
+          console.log('User data map size:', userDataMap.size);
+          setCommentUsers(userDataMap);
         }
         
         // Load user data
-        if (authState.user) {
-          const [progressResponse, savedResponse, ratingResponse] = await Promise.all([
-            movieAppApi.getEpisodeWatchProgress(),
-            movieAppApi.isMovieSaved(parseInt(id as string)),
-            movieAppApi.getUserRating(parseInt(id as string))
-          ]);
+        if (authState.user && authState.user.userID) {
+          // Load current user data from /user/me
+          try {
+            const currentUserResponse = await filmzoneApi.getCurrentUser();
+            const currentUserOk = (currentUserResponse as any).success === true || (currentUserResponse.errorCode >= 200 && currentUserResponse.errorCode < 300);
+            if (currentUserOk && currentUserResponse.data) {
+              console.log('Current user loaded:', currentUserResponse.data.userName || currentUserResponse.data.name);
+              setCurrentUser(currentUserResponse.data);
+            } else {
+              console.log('Failed to load current user, using authState.user:', currentUserResponse.errorMessage);
+              // Fallback to authState.user if API fails
+              setCurrentUser(authState.user);
+            }
+          } catch (err) {
+            console.log('Failed to load current user, using authState.user:', err);
+            // Fallback to authState.user if API fails
+            setCurrentUser(authState.user);
+          }
           
-          if (progressResponse.errorCode === 200 && progressResponse.data) {
-            // Find latest watched episode for this series
+          // Load watch progress
+          try {
+            const progressResponse = await filmzoneApi.getEpisodeWatchProgress();
+          if (progressResponse.success && progressResponse.data) {
             const latest = progressResponse.data.find((progress: any) => 
               progress.episode?.movieID === parseInt(id as string)
             );
             setLatestWatched(latest);
           }
-          
-          if (savedResponse.errorCode === 200) {
-            setIsSaved(savedResponse.data?.isSaved || false);
+          } catch (err) {
+            console.log('Failed to load watch progress:', err);
           }
           
-          if (ratingResponse.errorCode === 200) {
-            setUserRating(ratingResponse.data);
+          // Load user rating by fetching all ratings for user and filtering by movieID
+          try {
+            const userRatingsResponse = await filmzoneApi.getUserRatingsByUserId(authState.user.userID);
+            const ratingsOk = (userRatingsResponse as any).success === true || (userRatingsResponse.errorCode >= 200 && userRatingsResponse.errorCode < 300);
+            if (ratingsOk && userRatingsResponse.data) {
+              const ratings = Array.isArray(userRatingsResponse.data) ? userRatingsResponse.data : [userRatingsResponse.data];
+              const movieRating = ratings.find((r: any) => r.movieID === parseInt(id as string));
+              if (movieRating) {
+                setUserRating(movieRating);
+              }
+            }
+          } catch (err) {
+            console.log('Failed to load user rating:', err);
           }
         }
       } catch (error) {
@@ -103,30 +225,60 @@ export default function SeriesDetailsScreen() {
     loadSeriesData();
   }, [id, authState.user]);
 
+  // Also load current user when authState changes
+  React.useEffect(() => {
+    const loadCurrentUser = async () => {
+      if (authState.user && authState.user.userID) {
+        try {
+          const currentUserResponse = await filmzoneApi.getCurrentUser();
+          const currentUserOk = (currentUserResponse as any).success === true || (currentUserResponse.errorCode >= 200 && currentUserResponse.errorCode < 300);
+          if (currentUserOk && currentUserResponse.data) {
+            setCurrentUser(currentUserResponse.data);
+          } else {
+            // Fallback to authState.user
+            setCurrentUser(authState.user);
+          }
+        } catch (err) {
+          // Fallback to authState.user
+          setCurrentUser(authState.user);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    };
+    loadCurrentUser();
+  }, [authState.user]);
+
   const currentSeason = seriesData?.seasons?.find((s: any) => s.id === selectedSeason);
 
   const handleMovieBoxToggle = async () => {
     try {
-      if (!authState.user) {
+      if (!authState.user || !authState.user.userID) {
         Alert.alert('Login Required', 'Please login to save series to your list');
         return;
       }
       
-      const { movieAppApi } = await import('../../../services/mock-api');
+      const movieId = parseInt(id as string);
       
-      if (isSaved) {
-        // Remove from saved movies
-        await movieAppApi.removeFromSavedMovies(parseInt(id as string));
-        setIsSaved(false);
-        Alert.alert('Success', 'Series removed from your list');
-      } else {
-        // Add to saved movies
-        await movieAppApi.addToSavedMovies(parseInt(id as string));
-        setIsSaved(true);
-        Alert.alert('Success', 'Series added to your list');
+      try {
+        if (isSaved) {
+          // Remove from saved movies using context
+          console.log('SeriesDetail: Removing series from saved list:', movieId);
+          await removeSavedMovie(movieId);
+          Alert.alert('Success', 'Series removed from your list');
+        } else {
+          // Add to saved movies using context
+          console.log('SeriesDetail: Adding series to saved list:', movieId);
+          await addSavedMovie(movieId);
+          Alert.alert('Success', 'Series added to your list');
+        }
+        // Context is already updated, UI will automatically reflect the change
+      } catch (error) {
+        console.error('SeriesDetail: Error toggling saved status:', error);
+        Alert.alert('Error', 'Failed to update your series list');
       }
     } catch (error) {
-      console.log('Error toggling MovieBox:', error);
+      console.error('SeriesDetail: Error toggling saved status:', error);
       Alert.alert('Error', 'Failed to update your series list');
     }
   };
@@ -138,16 +290,23 @@ export default function SeriesDetailsScreen() {
     }
     
     try {
-      const { movieAppApi } = await import('../../../services/mock-api');
-      const response = await movieAppApi.addUserRating(parseInt(id as string), stars);
+      const movieId = parseInt(id as string);
+      const userId = authState.user.userID;
+      const response = userRating?.userRatingID
+        ? await filmzoneApi.updateUserRating({
+            userRatingID: userRating.userRatingID,
+            userID: userId,
+            movieID: movieId,
+            rating: stars,
+          })
+        : await filmzoneApi.createUserRating({ userID: userId, movieID: movieId, rating: stars });
       
-      if (response.errorCode === 200) {
-        setUserRating(response.data);
-        Alert.alert('Success', `You rated this series ${stars} star${stars > 1 ? 's' : ''}`);
+      const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+      if (ok && response.data) {
+        setUserRating({ ...response.data, stars: (response.data as any).stars ?? (response.data as any).rating ?? stars });
       }
     } catch (error) {
       console.log('Error adding rating:', error);
-      Alert.alert('Error', 'Failed to add rating');
     }
   };
   
@@ -178,7 +337,7 @@ export default function SeriesDetailsScreen() {
   const handleMainPlayPress = () => {
     const playEpisode = getPlayEpisode();
     if (playEpisode) {
-      // TODO: Add to watch history with backend
+      // Add to watch history with backend
       // addToHistory({
       //   seriesId: safe(id) as string,
       //   seriesTitle: safe(title) as string,
@@ -213,61 +372,62 @@ export default function SeriesDetailsScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView 
-        style={styles.container} 
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#e50914" />
-        </Pressable>
-        <View style={styles.logoContainer}>
-          <FlixGoLogo />
-        </View>
-        <Pressable style={styles.bookmarkBtn} onPress={handleMovieBoxToggle}>
-          <Ionicons 
-            name={isSaved ? "bookmark" : "bookmark-outline"} 
-            size={24} 
-            color={isSaved ? "#e50914" : "#fff"} 
-          />
-        </Pressable>
-      </View>
-
-      {/* Series Player Section - Full Width */}
-      <ImageBackground 
-        source={typeof cover === 'string' ? { uri: cover } : { uri: 'https://invalid-url.com' }} 
-        style={styles.playerBackground}
-        imageStyle={styles.playerBackgroundImage}
-      >
-        <View style={styles.playerGradient} />
-        <View style={styles.playerContent}>
-          <Text style={styles.playerTitle}>{movieData?.title || safe(title)}</Text>
-          <Text style={styles.playerSubtitle}>
-            {movieData?.tags?.map((tag: any) => tag.tagName).join(' • ') || safe(categories)} • {movieData?.year || safe(year)}
-          </Text>
-          <View style={styles.playButtonContainer}>
-            <WaveAnimation isActive={!isPlayPressed} color="#e50914" size={60} />
-            <Pressable 
-              style={({ pressed }) => [
-                styles.playButton, 
-                pressed && styles.playButtonPressed
-              ]} 
-              onPressIn={() => setIsPlayPressed(true)}
-              onPressOut={() => setIsPlayPressed(false)}
-              onPress={handleMainPlayPress}
-            >
-              <Ionicons name="play" size={24} color="#fff" />
-              <Text style={styles.playButtonText}>Play</Text>
-            </Pressable>
+      <View style={{ flex: 1, marginTop: 40  }}>
+        {/* Header (fixed, not scrollable) */}
+        <View style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#e50914" />
+          </Pressable>
+          <View style={styles.logoContainer}>
+            <FlixGoLogo />
           </View>
+          <Pressable style={styles.bookmarkBtn} onPress={handleMovieBoxToggle}>
+            <Ionicons 
+              name={isSaved ? "bookmark" : "bookmark-outline"} 
+              size={24} 
+              color={isSaved ? "#e50914" : "#fff"} 
+            />
+          </Pressable>
         </View>
-      </ImageBackground>
 
-      {/* Introduction Section - No Container */}
-      <View style={styles.introSection}>
+        <ScrollView 
+          style={styles.container} 
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Series Player Section - Full Width */}
+        <ImageBackground 
+          source={typeof cover === 'string' ? { uri: cover } : { uri: 'https://invalid-url.com' }} 
+          style={styles.playerBackground}
+          imageStyle={styles.playerBackgroundImage}
+        >
+          <View style={styles.playerGradient} />
+          <View style={styles.playerContent}>
+            <Text style={styles.playerTitle}>{movieData?.title || safe(title)}</Text>
+            <Text style={styles.playerSubtitle}>
+              {movieData?.tags?.map((tag: any) => tag.tagName).join(' • ') || safe(categories)} • {movieData?.year || safe(year)}
+            </Text>
+            <View style={styles.playButtonContainer}>
+              <WaveAnimation isActive={!isPlayPressed} color="#e50914" size={60} />
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.playButton, 
+                  pressed && styles.playButtonPressed
+                ]} 
+                onPressIn={() => setIsPlayPressed(true)}
+                onPressOut={() => setIsPlayPressed(false)}
+                onPress={handleMainPlayPress}
+              >
+                <Ionicons name="play" size={24} color="#fff" />
+                <Text style={styles.playButtonText}>Play</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ImageBackground>
+
+        {/* Introduction Section - No Container */}
+        <View style={styles.introSection}>
         <Text style={styles.sectionTitle}>{t('details.introduction')}</Text>
         <Text style={styles.kv}>{t('details.release_year')}: <Text style={styles.kvVal}>{movieData?.year || safe(year)}</Text></Text>
         <Text style={styles.kv}>{t('details.seasons')}: <Text style={styles.kvVal}>
@@ -277,42 +437,43 @@ export default function SeriesDetailsScreen() {
           })()}
         </Text></Text>
         <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{movieData?.region?.regionName || safe(country)}</Text></Text>
-        <Text style={styles.kv}>{t('details.genre')}: <Text style={styles.kvVal}>{movieData?.tags?.map((tag: any) => tag.tagName).join(', ') || 'Drama, Sci-Fi'}</Text></Text>
+        <Text style={styles.kv}>
+          {t('details.genre')}: <Text style={styles.kvVal}>
+            {tags.length
+              ? tags.map((tag: any) => tag.tagName).join(', ')
+              : safe(categories)}
+          </Text>
+        </Text>
+        {tags.length ? (
         <View style={styles.categoryLinks}>
-          {movieData?.tags?.map((tag: any) => (
-            <Pressable key={tag.tagID} onPress={() => router.push(`/category/${tag.tagName}` as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
+            {tags.map((tag: any) => (
+              <Pressable
+                key={tag.tagID}
+                onPress={() => router.push(`/category/${tag.tagName}` as any)}
+                style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}
+              >
               <Text style={styles.categoryLinkText}>{tag.tagName}</Text>
             </Pressable>
-          )) || (
-            <>
-              <Pressable onPress={() => router.push('/category/Drama' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-                <Text style={styles.categoryLinkText}>Drama</Text>
-              </Pressable>
-              <Pressable onPress={() => router.push('/category/Sci-Fi' as any)} style={({ pressed }) => [styles.categoryLink, pressed && { opacity: 0.8 }]}>
-                <Text style={styles.categoryLinkText}>Sci-Fi</Text>
-              </Pressable>
-            </>
-          )}
+            ))}
         </View>
-        <Text style={styles.kv}>{t('details.actors')}: <Text style={styles.kvVal}>{movieData?.actors?.map((actor: any) => actor.fullName).join(', ') || 'Michelle Rodriguez, Vin Diesel, Paul Walker'}</Text></Text>
+        ) : null}
+        <Text style={styles.kv}>
+          {t('details.actors')}: <Text style={styles.kvVal}>
+            {actors.length
+              ? actors.map((a: any) => a.fullName).join(', ')
+              : 'N/A'}
+          </Text>
+        </Text>
         <View style={styles.actorLinks}>
-          {movieData?.actors?.map((actor: any) => (
-            <Pressable key={actor.personID} onPress={() => router.push(`/actor/${actor.personID}` as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
+          {actors.slice(0, 3).map((actor: any, index: number) => (
+            <Pressable
+              key={actor.personID || index}
+              onPress={() => actor.personID && router.push(`/actor/${actor.personID}` as any)}
+              style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}
+            >
               <Text style={styles.actorLinkText}>{actor.fullName}</Text>
             </Pressable>
-          )) || (
-            <>
-              <Pressable onPress={() => router.push('/actor/1' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-                <Text style={styles.actorLinkText}>Michelle Rodriguez</Text>
-              </Pressable>
-              <Pressable onPress={() => router.push('/actor/2' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-                <Text style={styles.actorLinkText}>Vin Diesel</Text>
-              </Pressable>
-              <Pressable onPress={() => router.push('/actor/3' as any)} style={({ pressed }) => [styles.actorLink, pressed && { opacity: 0.8 }]}>
-                <Text style={styles.actorLinkText}>Paul Walker</Text>
-              </Pressable>
-            </>
-          )}
+          ))}
         </View>
         <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || safe(description, 'N/A')}</Text>
       </View>
@@ -332,7 +493,7 @@ export default function SeriesDetailsScreen() {
             showRedBorder={false}
           />
           <View style={styles.adOverlay}>
-            <Text style={styles.adTitle}>🎬 Netflix Originals</Text>
+            <Text style={styles.adTitle}>Netflix Originals</Text>
             <Text style={styles.adSubtitle}>Xem phim mới nhất trên Netflix</Text>
             <View style={styles.adBadge}>
               <Text style={styles.adBadgeText}>QUẢNG CÁO</Text>
@@ -456,7 +617,7 @@ export default function SeriesDetailsScreen() {
                   onPress={() => {
                     Haptics.selectionAsync();
                     
-                    // TODO: Add to watch history with backend
+                    // Add to watch history with backend
                     // addToHistory({
                     //   seriesId: safe(id) as string,
                     //   seriesTitle: safe(title) as string,
@@ -562,15 +723,15 @@ export default function SeriesDetailsScreen() {
               style={styles.starButton}
             >
               <Ionicons 
-                name={userRating?.stars && star <= userRating.stars ? "star" : "star-outline"} 
+                name={(userRating?.rating ?? userRating?.stars) && star <= (userRating?.rating ?? userRating?.stars) ? "star" : "star-outline"} 
                 size={28} 
-                color={userRating?.stars && star <= userRating.stars ? "#ffd166" : "#666"} 
+                color={(userRating?.rating ?? userRating?.stars) && star <= (userRating?.rating ?? userRating?.stars) ? "#ffd166" : "#666"} 
               />
             </Pressable>
           ))}
         </View>
         {userRating && (
-          <Text style={styles.ratingText}>You rated this series {userRating.stars} star{userRating.stars > 1 ? 's' : ''}</Text>
+          <Text style={styles.ratingText}>You rated this series {userRating.rating ?? userRating.stars} star{(userRating.rating ?? userRating.stars) > 1 ? 's' : ''}</Text>
         )}
         <Text style={styles.ratingSubtext}>Tap a star to rate this series</Text>
       </View>
@@ -580,7 +741,22 @@ export default function SeriesDetailsScreen() {
         <Text style={styles.sectionTitle}>{t('details.comments')}</Text>
         <View style={styles.commentForm}>
           <View style={styles.commentAvatar}>
-            <Text style={styles.commentAvatarText}>U</Text>
+            {(() => {
+              const user = currentUser || authState.user;
+              const avatar = user?.avatar || user?.profilePicture;
+              const userName = user?.name || user?.userName || 'U';
+              
+              return avatar ? (
+                <Image
+                  source={{ uri: avatar }}
+                  style={styles.commentAvatarImage}
+                />
+              ) : (
+                <Text style={styles.commentAvatarText}>
+                  {userName.charAt(0).toUpperCase()}
+                </Text>
+              );
+            })()}
           </View>
           <View style={styles.commentInputContainer}>
             <TextInput
@@ -596,26 +772,59 @@ export default function SeriesDetailsScreen() {
                 const text = commentText.trim();
                 if (!text) return;
                 
+                if (!authState.user || !authState.user.userID) {
+                  return;
+                }
+                
                 try {
-                  const { movieAppApi } = await import('../../../services/mock-api');
-                  const commentData = {
+                  const response = await filmzoneApi.createComment({
                     movieID: parseInt(id as string),
-                    userID: authState.user?.userID,
+                    userID: authState.user.userID,
                     content: text,
-                    parentID: null
-                  };
+                    likeCount: 0,
+                  });
                   
-                  const response = await movieAppApi.addComment(commentData);
-                  if (response.errorCode === 200) {
+                  const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+                  if (responseOk) {
                     // Reload comments to get updated list
-                    const commentsResponse = await movieAppApi.getCommentsByMovie(id as string);
-                    if (commentsResponse.errorCode === 200) {
-                      setComments(commentsResponse.data || []);
+                    const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+                    const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+                    if (commentsOk && commentsResponse.data) {
+                      const commentsData = commentsResponse.data || [];
+                      setComments(commentsData);
+                      
+                      // Fetch user data for each unique userID in comments
+                      // Filter out invalid userIDs (0, null, undefined, negative)
+                      const uniqueUserIDs = [...new Set(
+                        commentsData
+                          .map((c: any) => c.userID)
+                          .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+                          .map((id: any) => Number(id))
+                      )];
+                      
+                      const userDataMap = new Map<number, any>();
+                      
+                      // Fetch user data for all unique userIDs
+                      await Promise.all(
+                        uniqueUserIDs.map(async (userID: number) => {
+                          try {
+                            const userResponse = await filmzoneApi.getUserById(userID);
+                            const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                            if (userOk && userResponse.data) {
+                              userDataMap.set(userID, userResponse.data);
+                            }
+                          } catch (err) {
+                            console.error(`Error loading user data for userID ${userID}:`, err);
+                          }
+                        })
+                      );
+                      
+                      setCommentUsers(userDataMap);
                     }
                     setCommentText('');
                   }
                 } catch (error) {
-                  console.error('Error adding comment:', error);
+                  console.error('Error creating comment:', error);
                 }
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
@@ -625,34 +834,67 @@ export default function SeriesDetailsScreen() {
           </View>
         </View>
         
-        <View style={styles.commentsList}>
-          {comments.map((c, idx) => (
-            <View key={c.commentID || idx} style={styles.commentItem}>
-              <View style={styles.commentAvatar}>
-                <Text style={styles.commentAvatarText}>{c.userName?.charAt(0).toUpperCase() || 'U'}</Text>
-              </View>
-              <View style={styles.commentContent}>
-                <View style={styles.commentHeader}>
-                  <Text style={styles.commentAuthor}>{c.userName || 'User'}</Text>
-                  <Text style={styles.commentTime}>
-                    {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
-                  </Text>
+        {/* Comments List */}
+        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
+          {'All Comments'} ({comments.length})
+        </Text>
+        <ScrollView 
+          style={styles.commentsList} 
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={true}
+        >
+          {comments.length === 0 ? (
+            <Text style={styles.noCommentsText}>{'No comments yet. Be the first to comment!'}</Text>
+          ) : (
+            comments.map((c, idx) => {
+              const userID = c.userID ? Number(c.userID) : null;
+              const user = userID ? commentUsers.get(userID) : null;
+              const userName = user?.name || user?.userName || c.userName || 'User';
+              const userAvatar = user?.avatar || user?.profilePicture || null;
+              const avatarInitial = userName.charAt(0).toUpperCase();
+              
+              // Debug log
+              if (!user && userID) {
+                console.log(`User data not found for userID ${userID} in comment ${c.commentID}`);
+              }
+              
+              return (
+                <View key={c.commentID || idx} style={styles.commentItem}>
+                  <View style={styles.commentAvatar}>
+                    {userAvatar ? (
+                      <Image
+                        source={{ uri: userAvatar }}
+                        style={styles.commentAvatarImage}
+                      />
+                    ) : (
+                      <Text style={styles.commentAvatarText}>{avatarInitial}</Text>
+                    )}
+                  </View>
+                  <View style={styles.commentContent}>
+                    <View style={styles.commentHeader}>
+                      <Text style={styles.commentAuthor}>{userName}</Text>
+                      <Text style={styles.commentTime}>
+                        {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
+                      </Text>
+                    </View>
+                    <Text style={styles.commentText}>{c.content}</Text>
+                    <View style={styles.commentActions}>
+                      <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
+                        <Text style={styles.commentActionText}>Likes {c.likeCount || 0}</Text>
+                      </Pressable>
+                      <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
+                        <Text style={styles.commentActionText}>Trả lời</Text>
+                      </Pressable>
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.commentText}>{c.content}</Text>
-                <View style={styles.commentActions}>
-                  <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
-                    <Text style={styles.commentActionText}>👍 {c.likeCount || 0}</Text>
-                  </Pressable>
-                  <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
-                    <Text style={styles.commentActionText}>Trả lời</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
+              );
+            })
+          )}
+        </ScrollView>
         </View>
       </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -986,20 +1228,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)'
   },
-  commentAvatar: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 20, 
-    backgroundColor: '#e50914', 
-    marginRight: 12, 
-    alignItems: 'center', 
-    justifyContent: 'center' 
-  },
-  commentAvatarText: { 
-    color: '#fff', 
-    fontWeight: '700', 
-    fontSize: 16 
-  },
   commentInputContainer: { 
     flex: 1 
   },
@@ -1029,61 +1257,109 @@ const styles = StyleSheet.create({
     fontSize: 12 
   },
   commentsList: {
-    marginTop: 16
+    marginTop: 12,
+    maxHeight: 450,
+    backgroundColor: 'rgba(20, 20, 27, 0.6)',
+    borderRadius: 16,
+    padding: 12,
+  },
+  noCommentsText: {
+    color: '#8e8e93',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 32,
+    fontStyle: 'italic',
   },
   commentItem: { 
     flexDirection: 'row', 
     alignItems: 'flex-start', 
-    marginBottom: 16, 
-    padding: 12, 
-    backgroundColor: '#121219', 
-    borderRadius: 12,
+    marginBottom: 12, 
+    padding: 14, 
+    backgroundColor: 'rgba(30, 30, 40, 0.9)', 
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
+    borderColor: 'rgba(229, 9, 20, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  commentAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#e50914',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 209, 102, 0.4)',
+    overflow: 'hidden',
+  },
+  commentAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  commentAvatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
   },
   commentContent: {
     flex: 1,
-    marginLeft: 12
+    marginLeft: 14
   },
   commentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6
+    marginBottom: 8
   },
   commentAuthor: { 
     color: '#fff', 
     fontWeight: '700', 
-    fontSize: 14 
+    fontSize: 15,
+    letterSpacing: 0.3,
   },
   commentTime: {
-    color: '#8e8e93',
-    fontSize: 12
+    color: '#ffd166',
+    fontSize: 11,
+    fontWeight: '500',
   },
   commentText: { 
-    color: '#e0e0e0', 
+    color: '#e8e8e8', 
     fontSize: 14, 
-    lineHeight: 20,
-    marginBottom: 8
+    lineHeight: 21,
+    marginBottom: 10,
+    letterSpacing: 0.2,
   },
   commentActions: {
     flexDirection: 'row',
-    gap: 16
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 10,
+    marginTop: 4,
   },
   commentActionBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
   },
   commentActionText: {
-    color: '#8e8e93',
+    color: '#aaa',
     fontSize: 12,
     fontWeight: '600'
   },
   categoryLinks: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     marginTop: 8,
-    gap: 8
+    gap: 8,
+    overflow: 'visible'
   },
   categoryLink: {
     paddingVertical: 4,
@@ -1100,9 +1376,10 @@ const styles = StyleSheet.create({
   },
   actorLinks: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     marginTop: 8,
-    gap: 8
+    gap: 8,
+    overflow: 'visible'
   },
   actorLink: {
     paddingVertical: 4,

@@ -1,26 +1,17 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, Animated, FlatList } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, Animated, FlatList, ScrollView, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import FloatingSigninButton from './FloatingSigninButton';
+import filmzoneApi from '../services/filmzone-api';
 
-// Mock data for search - in real app this would come from API
-type SearchItem = {
-  id: string;
-  title: string;
-  cover: string;
-  categories: string[];
-  rating: string;
-  isSeries: boolean;
-  year: string;
-  studio: string;
-};
+// Search items lấy từ FilmZone search API
+type SearchItem = import('../types/api-dto').SearchResultDTO;
 
-// Search data will be loaded from FilmZone backend
-const searchData: SearchItem[] = [];
 
 export default function Header() {
   const { authState } = useAuth();
@@ -30,26 +21,102 @@ export default function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
+  const [showFilterOptions, setShowFilterOptions] = useState(false);
+  const [filterType, setFilterType] = useState<'genre' | 'year' | 'studio'>('genre');
+  const [tempSelectedGenre, setTempSelectedGenre] = useState('Tất cả');
+  const [tempSelectedYear, setTempSelectedYear] = useState('Tất cả');
+  const [tempSelectedStudio, setTempSelectedStudio] = useState('Tất cả');
+  const [customYearInput, setCustomYearInput] = useState('');
   const [burgerRotation] = useState(new Animated.Value(0));
   
-  // Search functionality - FilmZone backend integration
+  // Filter data - Load from FilmZone API
+  const [genres, setGenres] = useState(['Tất cả']);
+  const [tagList, setTagList] = useState<any[]>([]);
+  const [years, setYears] = useState(['Tất cả', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015']);
+  const [studios, setStudios] = useState(['Tất cả']);
+  const [regionList, setRegionList] = useState<any[]>([]);
+  
+  // Load filter data from backend (tags + regions)
+  useEffect(() => {
+    const loadFilterData = async () => {
+      try {
+        const [tagsResponse, regionsResponse] = await Promise.all([
+          filmzoneApi.getAllTags(),
+          filmzoneApi.getAllRegions(),
+        ]);
+
+        if (tagsResponse.errorCode === 200 && tagsResponse.data) {
+          setTagList(tagsResponse.data);
+          const tagNames = tagsResponse.data.map((tag: any) => tag.tagName);
+          setGenres(['Tất cả', ...tagNames]);
+        }
+
+        if (regionsResponse.errorCode === 200 && regionsResponse.data) {
+          setRegionList(regionsResponse.data);
+          const regionNames = regionsResponse.data.map((region: any) => region.regionName);
+          setStudios(['Tất cả', ...regionNames]);
+        }
+      } catch (error) {
+      }
+    };
+    
+    loadFilterData();
+  }, []);
+  
+  // Search functionality - FilmZone backend search API + filter logic
   useEffect(() => {
     const searchMovies = async () => {
-      if (searchQuery.trim().length > 0) {
-        try {
-          const { movieAppApi } = await import('../services/mock-api');
-          const response = await movieAppApi.searchMovies(searchQuery.trim());
-          
-          if (response.errorCode === 200 && response.data) {
-            setSearchResults(response.data);
-          } else {
-            setSearchResults([]);
+      const query = searchQuery.trim();
+      if (!query) {
+        setSearchResults([]);
+        return;
+      }
+
+      try {
+        // Map filters to backend parameters when có tag/region
+        let tagIds: number[] | undefined;
+        if (tempSelectedGenre !== 'Tất cả' && tempSelectedGenre !== 'Movies' && tempSelectedGenre !== 'TV Shows') {
+          const foundTag = tagList.find((t: any) => t.tagName === tempSelectedGenre);
+          if (foundTag) tagIds = [foundTag.tagID];
+        }
+
+        let regionCode: string | undefined;
+        if (tempSelectedStudio !== 'Tất cả') {
+          const foundRegion = regionList.find((r: any) => r.regionName === tempSelectedStudio);
+          if (foundRegion?.regionCode) regionCode = foundRegion.regionCode;
+        }
+
+        const response = await filmzoneApi.searchMovies(query, { tagIds, regionCode });
+
+        const isOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (isOk && response.data) {
+          let filteredResults = response.data;
+
+          // Client-side filter for type (Movies/TV)
+          if (tempSelectedGenre === 'Movies') {
+            filteredResults = filteredResults.filter(item => (item as any).isSeries === false);
+          } else if (tempSelectedGenre === 'TV Shows') {
+            filteredResults = filteredResults.filter(item => (item as any).isSeries === true);
           }
-        } catch (error) {
-          console.error('Search error:', error);
+
+          // Client-side filter for year (backend chưa hỗ trợ param year)
+          if (tempSelectedYear !== 'Tất cả') {
+            filteredResults = filteredResults.filter(item => item.year?.toString() === tempSelectedYear);
+          }
+
+          // Nếu chưa map được regionCode thì vẫn lọc client theo studio/regionName
+          if (tempSelectedStudio !== 'Tất cả' && !regionCode) {
+            filteredResults = filteredResults.filter(item => 
+              item.studio === tempSelectedStudio || 
+              (item as any).region?.regionName === tempSelectedStudio
+            );
+          }
+
+          setSearchResults(filteredResults);
+        } else {
           setSearchResults([]);
         }
-      } else {
+      } catch {
         setSearchResults([]);
       }
     };
@@ -57,7 +124,7 @@ export default function Header() {
     // Debounce search to avoid too many API calls
     const timeoutId = setTimeout(searchMovies, 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  }, [searchQuery, tempSelectedGenre, tempSelectedYear, tempSelectedStudio]);
 
   const handleSearchPress = () => {
     setSearchOpen(true);
@@ -69,17 +136,35 @@ export default function Header() {
     setSearchResults([]);
   };
 
+
+  const handleFilterToggle = async () => {
+    try {
+      await Haptics.selectionAsync();
+    } catch {}
+    
+    // Check if user is logged in before allowing filter access
+    if (!authState.user) {
+      Alert.alert(
+        t('filter.signin_required_title'),
+        t('filter.signin_required_message'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('common.signin'), onPress: () => {
+            setSearchOpen(false); // Close search modal before navigating
+            router.push('/auth/signin');
+          }}
+        ]
+      );
+      return;
+    }
+    
+    setShowFilterOptions(!showFilterOptions);
+  };
+
+
   const handleSearchItemPress = async (item: SearchItem) => {
     try { await Haptics.selectionAsync(); } catch {}
     handleSearchClose();
-    
-    // Add movie to watch progress when clicked
-    try {
-      const { movieAppApi } = await import('../services/mock-api');
-      await movieAppApi.addToWatchProgress(parseInt(item.id));
-    } catch (error) {
-      console.log('Error adding to watch progress:', error);
-    }
     
     const isSeries = typeof item.isSeries === 'boolean' ? item.isSeries : item.isSeries;
     const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
@@ -87,7 +172,7 @@ export default function Header() {
       id: item.id, 
       title: item.title, 
       cover: item.cover, 
-      categories: item.categories.join(' • '), 
+      categories: Array.isArray(item.categories) ? item.categories.join(' • ') : '', 
       rating: item.rating 
     };
     router.push({ pathname, params: baseParams });
@@ -233,18 +318,218 @@ export default function Header() {
           <View style={styles.searchHeader}>
             <Text style={styles.searchTitle}>{t('search.title')}</Text>
             <Pressable onPress={handleSearchClose} style={styles.searchCloseBtn}>
-              <Text style={styles.searchCloseText}>✕</Text>
+              <Text style={styles.searchCloseText}>X</Text>
             </Pressable>
           </View>
           
-          <TextInput
-            placeholder={t('search.placeholder')}
-            placeholderTextColor="#8e8e93"
-            style={styles.searchModalInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus={true}
-          />
+                  {/* Search Input with Filter Toggle Button */}
+                  <View style={styles.searchInputContainer}>
+                    <TextInput
+                      placeholder={t('search.placeholder')}
+                      placeholderTextColor="#8e8e93"
+                      style={styles.searchModalInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      autoFocus={true}
+                    />
+                    
+                    {/* Small Square Filter Toggle Button */}
+                    <Pressable 
+                      style={({ pressed }) => [
+                        styles.searchFilterToggleButton, 
+                        pressed && { opacity: 0.8 },
+                        showFilterOptions && styles.searchFilterToggleButtonActive,
+                        (tempSelectedGenre !== 'Tất cả' || tempSelectedYear !== 'Tất cả' || tempSelectedStudio !== 'Tất cả') && styles.searchFilterToggleButtonActive
+                      ]}
+                      onPress={handleFilterToggle}
+                    >
+                      <Ionicons 
+                        name="filter" 
+                        size={16} 
+                        color={(showFilterOptions || tempSelectedGenre !== 'Tất cả' || tempSelectedYear !== 'Tất cả' || tempSelectedStudio !== 'Tất cả') ? '#fff' : '#e50914'} 
+                      />
+                    </Pressable>
+                  </View>
+                  
+                  {/* Filter Status Display */}
+                  {(tempSelectedGenre !== 'Tất cả' || tempSelectedYear !== 'Tất cả' || tempSelectedStudio !== 'Tất cả') && (
+                    <View style={styles.searchFilterStatus}>
+                      <Text style={styles.searchFilterStatusText}>
+                        {t('filter.active_filters')}: 
+                        {tempSelectedGenre !== 'Tất cả' && ` ${tempSelectedGenre}`}
+                        {tempSelectedYear !== 'Tất cả' && ` • ${tempSelectedYear}`}
+                        {tempSelectedStudio !== 'Tất cả' && ` • ${tempSelectedStudio}`}
+                      </Text>
+                    </View>
+                  )}
+          
+          {/* Filter Section - Conditional Display */}
+          {showFilterOptions && (
+            <View style={styles.searchFilterSection}>
+              <Text style={styles.searchFilterTitle}>{t('filter.options')}</Text>
+              
+              {/* Filter Type Buttons */}
+              <View style={styles.filterTypeRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.filterTypeBtn, filterType === 'genre' && styles.filterTypeBtnActive, pressed && { opacity: 0.7 }]}
+                  onPress={() => setFilterType('genre')}
+                >
+                  <Text style={[styles.filterTypeText, filterType === 'genre' && styles.filterTypeTextActive]}>{t('filter.genre')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.filterTypeBtn, filterType === 'year' && styles.filterTypeBtnActive, pressed && { opacity: 0.7 }]}
+                  onPress={() => setFilterType('year')}
+                >
+                  <Text style={[styles.filterTypeText, filterType === 'year' && styles.filterTypeTextActive]}>{t('filter.year')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.filterTypeBtn, filterType === 'studio' && styles.filterTypeBtnActive, pressed && { opacity: 0.7 }]}
+                  onPress={() => setFilterType('studio')}
+                >
+                  <Text style={[styles.filterTypeText, filterType === 'studio' && styles.filterTypeTextActive]}>{t('filter.studio')}</Text>
+                </Pressable>
+              </View>
+
+              {/* Filter Options - Grid Layout */}
+              <View style={styles.filterGridContainer}>
+                {filterType === 'genre' && (
+                  <FlatList
+                    data={genres}
+                    numColumns={3}
+                    keyExtractor={(item) => item}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.filterGridItem,
+                          tempSelectedGenre === item && styles.filterGridItemActive,
+                          pressed && { opacity: 0.7 }
+                        ]}
+                        onPress={() => setTempSelectedGenre(item)}
+                      >
+                        <Text style={[
+                          styles.filterGridText,
+                          tempSelectedGenre === item && styles.filterGridTextActive
+                        ]}>
+                          {item}
+                        </Text>
+                      </Pressable>
+                    )}
+                    contentContainerStyle={styles.filterGridContent}
+                    showsVerticalScrollIndicator={false}
+                  />
+                )}
+                
+                {filterType === 'year' && (
+                  <View style={styles.yearFilterContainer}>
+                    {/* Recent Years Grid */}
+                    <FlatList
+                      data={years}
+                      numColumns={4}
+                      keyExtractor={(item) => item}
+                      renderItem={({ item }) => (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.filterGridItem,
+                            tempSelectedYear === item && styles.filterGridItemActive,
+                            pressed && { opacity: 0.7 }
+                          ]}
+                          onPress={() => {
+                            setTempSelectedYear(item);
+                            setCustomYearInput(''); // Clear custom input when selecting preset year
+                          }}
+                        >
+                          <Text style={[
+                            styles.filterGridText,
+                            tempSelectedYear === item && styles.filterGridTextActive
+                          ]}>
+                            {item}
+                          </Text>
+                        </Pressable>
+                      )}
+                      contentContainerStyle={styles.filterGridContent}
+                      showsVerticalScrollIndicator={false}
+                    />
+                    
+                    {/* Custom Year Input */}
+                    <View style={styles.customYearContainer}>
+                      <Text style={styles.customYearLabel}>Nhập năm tùy chỉnh:</Text>
+                      <TextInput
+                        style={styles.customYearInput}
+                        placeholder="VD: 2010"
+                        placeholderTextColor="#8e8e93"
+                        value={customYearInput}
+                        onChangeText={(text: string) => {
+                          setCustomYearInput(text);
+                          if (text.trim() !== '') {
+                            setTempSelectedYear(text);
+                          }
+                        }}
+                        keyboardType="numeric"
+                        maxLength={4}
+                      />
+                    </View>
+                  </View>
+                )}
+                
+                {filterType === 'studio' && (
+                  <FlatList
+                    data={studios}
+                    numColumns={3}
+                    keyExtractor={(item) => item}
+                    renderItem={({ item }) => (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.filterGridItem,
+                          tempSelectedStudio === item && styles.filterGridItemActive,
+                          pressed && { opacity: 0.7 }
+                        ]}
+                        onPress={() => setTempSelectedStudio(item)}
+                      >
+                        <Text style={[
+                          styles.filterGridText,
+                          tempSelectedStudio === item && styles.filterGridTextActive
+                        ]}>
+                          {item}
+                        </Text>
+                      </Pressable>
+                    )}
+                    contentContainerStyle={styles.filterGridContent}
+                    showsVerticalScrollIndicator={false}
+                  />
+                )}
+              </View>
+              
+              <View style={styles.modalButtonRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.modalResetBtn, pressed && { opacity: 0.7 }]}
+                  onPress={() => {
+                    setTempSelectedGenre('Tất cả');
+                    setTempSelectedYear('Tất cả');
+                    setTempSelectedStudio('Tất cả');
+                    setCustomYearInput(''); // Clear custom input on reset
+                    
+                    // Reset will automatically trigger search with cleared filters
+                  }}
+                >
+                  <Text style={styles.modalResetText}>{t('filter.reset')}</Text>
+                </Pressable>
+                
+                        <Pressable
+                          style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.7 }]}
+                          onPress={() => {
+                            // Apply filters - the useEffect will handle the filtering automatically
+                            // No need to modify search query, just close filter options
+                            setShowFilterOptions(false);
+                            
+                            // Trigger search with current query and filters
+                            // The useEffect will automatically apply the filters
+                          }}
+                        >
+                          <Text style={styles.modalCloseText}>{t('filter.apply')}</Text>
+                        </Pressable>
+              </View>
+            </View>
+          )}
           
           {searchQuery.trim().length > 0 && (
             <View style={styles.searchResultsContainer}>
@@ -261,7 +546,7 @@ export default function Header() {
                       <Image source={{ uri: item.cover }} style={styles.searchResultImage} />
                       <View style={styles.searchResultContent}>
                         <Text style={styles.searchResultTitle}>{item.title}</Text>
-                        <Text style={styles.searchResultCategories}>{item.categories.join(' • ')}</Text>
+                        <Text style={styles.searchResultCategories}>{(item.categories || []).join(' • ')}</Text>
                         <View style={styles.searchResultMeta}>
                           <Text style={styles.searchResultRating}>{item.rating}</Text>
                           <Text style={styles.searchResultYear}>{item.year}</Text>
@@ -296,6 +581,7 @@ export default function Header() {
           )}
         </View>
       </Modal>
+
       
       {/* Floating Signin Button */}
       <FloatingSigninButton />
@@ -398,14 +684,189 @@ const styles = StyleSheet.create({
   searchTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   searchCloseBtn: { padding: 4 },
   searchCloseText: { color: '#8e8e93', fontSize: 18, fontWeight: '700' },
+  // Search Input Container
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
   searchModalInput: { 
+    flex: 1,
     backgroundColor: '#1c1c23', 
     borderRadius: 8, 
     paddingHorizontal: 12, 
     paddingVertical: 10, 
     color: '#fff', 
     fontSize: 16, 
-    marginBottom: 16 
+    borderWidth: 1,
+    borderColor: '#e50914',
+  },
+  
+  // Small Square Filter Toggle Button
+  searchFilterToggleButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e50914',
+  },
+  searchFilterToggleButtonActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  
+  // Filter Status Display
+  searchFilterStatus: {
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e50914',
+  },
+  searchFilterStatusText: {
+    color: '#e50914',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  // Filter Section in Search Modal
+  searchFilterSection: {
+    marginBottom: 16,
+  },
+  searchFilterTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  
+  // Filter Type Buttons
+  filterTypeRow: { 
+    flexDirection: 'row', 
+    marginBottom: 16, 
+    backgroundColor: '#1c1c23', 
+    borderRadius: 8, 
+    padding: 4 
+  },
+  filterTypeBtn: { 
+    flex: 1, 
+    paddingVertical: 8, 
+    paddingHorizontal: 12, 
+    borderRadius: 6, 
+    alignItems: 'center' 
+  },
+  filterTypeBtnActive: { 
+    backgroundColor: '#e50914' 
+  },
+  filterTypeText: { 
+    color: '#c7c7cc', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  filterTypeTextActive: { 
+    color: '#fff', 
+    fontWeight: '700' 
+  },
+  
+  // Filter Grid Layout
+  filterGridContainer: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  filterGridContent: {
+    paddingHorizontal: 4,
+  },
+  filterGridItem: {
+    flex: 1,
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    margin: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  filterGridItemActive: {
+    backgroundColor: '#e50914',
+    borderColor: '#e50914',
+  },
+  filterGridText: {
+    color: '#c7c7cc',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  filterGridTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  
+  // Custom Year Input Styles
+  yearFilterContainer: {
+    marginBottom: 16,
+  },
+  customYearContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  customYearLabel: {
+    color: '#c7c7cc',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  customYearInput: {
+    backgroundColor: '#1c1c23',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#fff',
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e50914',
+    textAlign: 'center',
+  },
+  
+  // Modal Buttons
+  modalButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalResetBtn: {
+    flex: 1,
+    backgroundColor: '#1c1c23',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e50914',
+  },
+  modalResetText: {
+    color: '#e50914',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalCloseBtn: {
+    flex: 1,
+    backgroundColor: '#e50914',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   searchResultsContainer: { maxHeight: 300 },
   searchResultItem: { 

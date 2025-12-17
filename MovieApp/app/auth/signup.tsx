@@ -35,28 +35,35 @@ export default function SignUpScreen() {
     try {
       await Haptics.selectionAsync();
       
-      const movieAppApi = (await import('../../services/api')).default;
-      const response = await movieAppApi.register(
-        name.trim(),
-        email.trim().toLowerCase(),
-        password,
-        name.trim().split(' ')[0], // firstName
-        name.trim().split(' ').slice(1).join(' ') || '', // lastName
-        'Other' // gender
-      );
+      const { filmzoneApi } = await import('../../services/filmzone-api');
+      const trimmedName = name.trim();
+      const trimmedEmail = email.trim().toLowerCase();
+      const [firstName, ...restNames] = trimmedName.split(' ');
+      const lastName = restNames.join(' ');
 
-      if (response.errorCode === 200) {
+      const response = await filmzoneApi.register({
+        userName: name,
+        email: trimmedEmail,
+        password,
+        firstName: firstName || trimmedName,
+        lastName: lastName || '',
+        gender: 'Other',
+      });
+
+      if (response.errorCode === 200 && response.data) {
+        const userId = (response.data as any).userID;
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Success', 
-          'Account created successfully! Please check your email to verify your account.',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.push('/auth/signin')
-            }
-          ]
-        );
+        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.', [
+          {
+            text: 'Verify now',
+            onPress: () => router.push({ pathname: '/auth/email-verify', params: { email: trimmedEmail, userID: String(userId) } }),
+          },
+          {
+            text: 'Later',
+            style: 'cancel',
+            onPress: () => router.push('/auth/signin'),
+          },
+        ]);
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert('Error', response.errorMessage || 'Registration failed');

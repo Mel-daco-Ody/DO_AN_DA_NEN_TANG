@@ -8,6 +8,8 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { ApiProvider } from '../contexts/ApiContext';
+import { NotificationProvider } from '../contexts/NotificationContext';
+import { SavedMoviesProvider } from '../contexts/SavedMoviesContext';
 import AppWrapper from '../components/AppWrapper';
 
 export default function RootLayout() {
@@ -26,8 +28,10 @@ export default function RootLayout() {
       <LanguageProvider>
         <ThemeProvider>
           <AuthProvider>
-            <ApiProvider>
-              <Stack>
+            <SavedMoviesProvider>
+              <NotificationProvider>
+                <ApiProvider>
+                  <Stack>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="auth/signin" options={{ headerShown: false }} />
                 <Stack.Screen name="auth/signup" options={{ headerShown: false }} />
@@ -46,9 +50,11 @@ export default function RootLayout() {
                 <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="moviebox" options={{ headerShown: false }} />
                 <Stack.Screen name="+not-found" />
-              </Stack>
-              <StatusBar style="auto" />
-            </ApiProvider>
+                  </Stack>
+                  <StatusBar style="auto" />
+                </ApiProvider>
+              </NotificationProvider>
+            </SavedMoviesProvider>
           </AuthProvider>
         </ThemeProvider>
       </LanguageProvider>

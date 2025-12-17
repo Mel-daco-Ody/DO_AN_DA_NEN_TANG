@@ -1,9 +1,13 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { AuthUser } from '../../shared-data/types';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthUser } from '../shared-data';
 import { movieAppApi } from '../services/mock-api';
+import filmzoneApi from '../services/filmzone-api';
 
 // Debug: Log AuthContext API instance
-console.log('🔐 AuthContext API instance:', movieAppApi);
+console.log('AuthContext API instance:', movieAppApi);
+
+const AUTH_STORAGE_KEY = '@auth_state';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -16,7 +20,7 @@ interface AuthState {
 
 interface AuthContextType {
   authState: AuthState;
-  signIn: (userName: string, password: string) => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string }>;
+  signIn: (userName: string, password: string) => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string | null }>;
   verifyMfa: (mfaTicket: string, code: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateUser: (user: Partial<AuthUser>) => void;
@@ -49,47 +53,224 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>(defaultAuthState);
+  const [isLoading, setIsLoading] = useState(true);
+  // store pending login response when MFA is required
+  const [pendingLogin, setPendingLogin] = useState<any | null>(null);
+
+  // Load auth state from storage on mount
+  useEffect(() => {
+    const loadAuthState = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        if (stored) {
+          const parsedState = JSON.parse(stored);
+          console.log('AuthContext: Loading auth state from storage:', {
+            isAuthenticated: parsedState.isAuthenticated,
+            hasUser: !!parsedState.user,
+            userId: parsedState.user?.userID,
+            hasToken: !!parsedState.token,
+          });
+          
+          // Validate that we have required data
+          if (parsedState.isAuthenticated && parsedState.token && parsedState.user?.userID) {
+            // Restore token to API client
+            movieAppApi.setToken(parsedState.token);
+            filmzoneApi.setToken(parsedState.token);
+            setAuthState(parsedState);
+            console.log('AuthContext: Auth state restored from storage');
+          } else {
+            console.warn('AuthContext: Invalid auth state in storage, clearing...');
+            await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+            setAuthState(defaultAuthState);
+          }
+        }
+      } catch (error) {
+        console.warn('AuthContext: Failed to load auth state:', error);
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadAuthState();
+  }, []);
+
+  // Save auth state to storage whenever it changes
+  useEffect(() => {
+    const saveAuthState = async () => {
+      if (!isLoading) {
+        try {
+          if (authState.isAuthenticated) {
+            await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authState));
+          } else {
+            await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          }
+        } catch (error) {
+          console.warn('Failed to save auth state:', error);
+        }
+      }
+    };
+    saveAuthState();
+  }, [authState, isLoading]);
+
+  // Helper function to map UserDTO to AuthUser
+  const mapUserDTOToAuthUser = (userDTO: any): AuthUser | null => {
+    if (!userDTO || !userDTO.userID) {
+      return null;
+    }
+    
+    return {
+      userID: userDTO.userID,
+      userName: userDTO.userName || '',
+      firstName: userDTO.firstName,
+      lastName: userDTO.lastName,
+      name: userDTO.name || userDTO.userName || '',
+      email: userDTO.email || '',
+      role: (userDTO.role as any) || 'User',
+      status: (userDTO.status as any) || 'Active',
+      avatar: userDTO.avatar || userDTO.profilePicture,
+      profilePicture: userDTO.profilePicture || userDTO.avatar,
+      phone: userDTO.phoneNumber,
+      phoneNumber: userDTO.phoneNumber,
+      dateOfBirth: userDTO.dateOfBirth,
+      gender: userDTO.gender,
+      address: userDTO.address,
+      city: userDTO.city,
+      country: userDTO.country,
+      postalCode: userDTO.postalCode,
+      language: userDTO.language,
+      timezone: userDTO.timezone || userDTO.timeZone,
+      timeZone: userDTO.timezone || userDTO.timeZone,
+      preferences: userDTO.preferences,
+      isEmailVerified: userDTO.isEmailVerified || false,
+      isPhoneVerified: userDTO.isPhoneVerified,
+      twoFactorEnabled: userDTO.twoFactorEnabled,
+      subscription: userDTO.subscription ? {
+        plan: (userDTO.subscription.plan as any) || 'starter',
+        status: (userDTO.subscription.status as any) || 'inactive',
+        startDate: userDTO.subscription.startDate,
+        endDate: userDTO.subscription.endDate,
+        autoRenew: userDTO.subscription.autoRenew,
+      } : undefined,
+      createdAt: userDTO.createdAt || new Date().toISOString(),
+      updatedAt: userDTO.updatedAt,
+      lastLogin: userDTO.lastLoginAt,
+      lastActiveAt: userDTO.lastLoginAt,
+    };
+  };
 
   const signIn = async (userName: string, password: string) => {
     try {
+      console.log('AuthContext: Starting login for:', userName);
       const response = await movieAppApi.login(userName, password);
       
+      console.log('AuthContext: Login response:', JSON.stringify(response, null, 2));
+      
       if (response.errorCode === 200 && response.data) {
-        if (response.data.requiresMfa) {
-          // MFA required
+        const loginData = response.data;
+        console.log('AuthContext: Login data:', JSON.stringify(loginData, null, 2));
+        
+        // Handle different response formats from API
+        // API thật trả về: { accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt }
+        // API mock trả về: { token, refreshToken, user, sessionId, deviceId, ... }
+        const token = (loginData as any).accessToken || (loginData as any).token;
+        const refreshToken = loginData.refreshToken;
+        
+        if (!token) {
+          console.error('AuthContext: No token in login response');
+          return {
+            success: false,
+            error: 'Login response missing token'
+          };
+        }
+        
+        // Set token in API client immediately
+        movieAppApi.setToken(token);
+        filmzoneApi.setToken(token);
+        console.log('AuthContext: Token set in API client');
+        
+        // Check for MFA requirement (only if user object exists in response)
+        const userFromResponse = (loginData as any).user;
+        const userTwoFactor = userFromResponse?.twoFactorEnabled;
+        
+        if (userTwoFactor) {
+          // Store pending login to be completed by verifyMfa
+          setPendingLogin(loginData);
           setAuthState(prev => ({
             ...prev,
             requiresMfa: true,
-            mfaTicket: response.data?.mfaTicket || null,
+            mfaTicket: (loginData as any).sessionId ? String((loginData as any).sessionId) : null,
           }));
-          return { 
-            success: false, 
-            requiresMfa: true, 
-            mfaTicket: response.data?.mfaTicket 
+          return {
+            success: false,
+            requiresMfa: true,
+            mfaTicket: (loginData as any).sessionId ? String((loginData as any).sessionId) : null,
           };
-        } else {
-          // Login successful
-          console.log('🔐 AuthContext: Login successful, setting auth state');
-          console.log('🔐 AuthContext: Response data:', response.data);
-          console.log('🔐 AuthContext: User from response:', response.data.user);
-          
-          setAuthState({
-            isAuthenticated: true,
-            user: response.data.user, // Fix: Use response.data.user instead of response.data
-            token: response.data.token,
-            refreshToken: response.data.refreshToken,
-            requiresMfa: false,
-            mfaTicket: null,
-          });
-          return { success: true };
         }
+        
+        // Login successful - always get user info from API since real API doesn't return user in login response
+        console.log('AuthContext: Login successful, fetching user data...');
+        
+        let userData: AuthUser | null = null;
+        
+        // Try to get user from API
+        try {
+          console.log('AuthContext: Fetching current user from API...');
+          const userResponse = await movieAppApi.getCurrentUser();
+          console.log('AuthContext: getCurrentUser response:', JSON.stringify(userResponse, null, 2));
+          
+          if (userResponse.errorCode === 200 && userResponse.data) {
+            userData = mapUserDTOToAuthUser(userResponse.data);
+            console.log('AuthContext: Mapped user from getCurrentUser:', userData);
+          } else {
+            console.warn('AuthContext: getCurrentUser returned error:', userResponse.errorMessage);
+          }
+        } catch (error) {
+          console.warn('AuthContext: Failed to get current user from API:', error);
+        }
+        
+        // Fallback: try to use user from login response if getCurrentUser failed
+        if (!userData && userFromResponse) {
+          console.log('AuthContext: Falling back to user from login response');
+          userData = mapUserDTOToAuthUser(userFromResponse);
+          console.log('AuthContext: Mapped user from login response:', userData);
+        }
+
+        if (!userData) {
+          console.error('AuthContext: ERROR - No user data available after login!');
+          console.error('AuthContext: Login data:', JSON.stringify(loginData, null, 2));
+          return {
+            success: false,
+            error: 'Login successful but user data not available. Please try again.'
+          };
+        }
+
+        const newAuthState = {
+          isAuthenticated: true,
+          user: userData,
+          token: token,
+          refreshToken: refreshToken,
+          requiresMfa: false,
+          mfaTicket: null,
+        };
+        
+        console.log('AuthContext: Setting auth state:', {
+          isAuthenticated: newAuthState.isAuthenticated,
+          hasUser: !!newAuthState.user,
+          userId: newAuthState.user?.userID,
+          userName: newAuthState.user?.userName,
+        });
+        
+        setAuthState(newAuthState);
+        return { success: true };
       } else {
+        console.error('AuthContext: Login failed:', response.errorMessage);
         return { 
           success: false, 
           error: response.errorMessage || 'Login failed' 
         };
       }
     } catch (error) {
+      console.error('AuthContext: Login exception:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Login failed' 
@@ -97,35 +278,58 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Local MFA verification: mock verification without calling non-existent API method
   const verifyMfa = async (mfaTicket: string, code: string) => {
     try {
-      const response = await movieAppApi.verifyMfa(mfaTicket, code);
-      
-      if (response.errorCode === 200 && response.data) {
-        console.log('🔐 AuthContext: MFA verification successful');
-        console.log('🔐 AuthContext: MFA response data:', response.data);
-        console.log('🔐 AuthContext: MFA user from response:', response.data.user);
+      // Simple mock: accept '123456' as the valid code for development
+      if (!pendingLogin) {
+        return { success: false, error: 'No pending MFA login found' };
+      }
+      if (code === '123456') {
+        const loginData = pendingLogin;
         
+        // Set token in API client
+        if (loginData.token) {
+          movieAppApi.setToken(loginData.token);
+          filmzoneApi.setToken(loginData.token);
+        }
+
+        // Map user data
+        let userData: AuthUser | null = null;
+        if (loginData.user) {
+          userData = mapUserDTOToAuthUser(loginData.user);
+        }
+        
+        // Try to get full user info from API
+        if (!userData) {
+          try {
+            const userResponse = await movieAppApi.getCurrentUser();
+            if (userResponse.errorCode === 200 && userResponse.data) {
+              userData = mapUserDTOToAuthUser(userResponse.data);
+            }
+          } catch (error) {
+            console.warn('Failed to get current user:', error);
+          }
+        }
+
+        if (!userData) {
+          return { success: false, error: 'Unable to retrieve user data' };
+        }
+
         setAuthState({
           isAuthenticated: true,
-          user: response.data.user, // Fix: Use response.data.user instead of response.data
-          token: response.data.token,
-          refreshToken: response.data.refreshToken,
+          user: userData,
+          token: loginData.token,
+          refreshToken: loginData.refreshToken,
           requiresMfa: false,
           mfaTicket: null,
         });
+        setPendingLogin(null);
         return { success: true };
-      } else {
-        return { 
-          success: false, 
-          error: response.errorMessage || 'MFA verification failed' 
-        };
       }
+      return { success: false, error: 'Invalid verification code' };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'MFA verification failed' 
-      };
+      return { success: false, error: error instanceof Error ? error.message : 'MFA verification failed' };
     }
   };
 
@@ -136,7 +340,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.warn('Logout request failed:', error);
     } finally {
+      // Clear token from API client
+      movieAppApi.setToken(null);
+      filmzoneApi.setToken(null);
+      // Clear auth state and storage
       setAuthState(defaultAuthState);
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     }
   };
 
@@ -180,21 +389,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const refreshAuthToken = async () => {
-    try {
-      const response = await movieAppApi.refreshToken();
-      
-      if (response.errorCode === 200 && response.data) {
-        setAuthState(prev => ({
-          ...prev,
-          token: response.data?.token || prev.token,
-        }));
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.warn('Token refresh failed:', error);
-      return false;
-    }
+    // Mock implementation: movieAppApi does not expose a refreshToken method
+    console.warn('refreshAuthToken: refreshToken API not implemented in mock API');
+    return false;
   };
 
   return (
