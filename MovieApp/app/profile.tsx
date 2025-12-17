@@ -722,10 +722,32 @@ export default function ProfileScreen() {
     if (!result.canceled) {
       const newAvatarUri = result.assets[0].uri;
       setAvatar(newAvatarUri);
-      // Update avatar in authState to sync across the app
+
+      // Gửi avatar mới lên backend qua /user/update/profile (multipart/form-data)
+      try {
+        const user = authState.user;
+        if (!user || !user.userID) {
+          Alert.alert('Error', 'Missing user info. Please sign in again.');
+        } else {
+          await Haptics.selectionAsync();
+
+          await filmzoneApi.updateUserProfileAvatar({
+            userID: user.userID,
+            avatarUri: newAvatarUri,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            gender: user.gender,
+            dateOfBirth: user.dateOfBirth,
+          } as any);
+        }
+      } catch (error) {
+        console.warn('Failed to upload avatar to backend', error);
+      }
+
+      // Cập nhật avatar trong authState để sync toàn app
       updateUser({
         avatar: newAvatarUri,
-        profilePicture: newAvatarUri
+        profilePicture: newAvatarUri,
       });
     }
   };

@@ -307,6 +307,95 @@ class FilmZoneApi {
   }
 
   /**
+   * PUT /user/update/profile
+   * Cập nhật avatar/profile bằng multipart/form-data
+   */
+  async updateUserProfileAvatar(params: {
+    userID: number;
+    avatarUri: string;
+    firstName?: string;
+    lastName?: string;
+    gender?: string;
+    dateOfBirth?: string;
+  }): Promise<FilmZoneResponse<UserDTO>> {
+    const { userID, avatarUri, firstName, lastName, gender, dateOfBirth } = params;
+
+    if (!userID || !avatarUri) {
+      return {
+        errorCode: 400,
+        errorMessage: 'userID and avatarUri are required',
+        success: false,
+      };
+    }
+
+    const formData = new FormData();
+    formData.append('userID', String(userID));
+    if (firstName) formData.append('firstName', firstName);
+    if (lastName) formData.append('lastName', lastName);
+    if (gender) formData.append('gender', gender);
+    if (dateOfBirth) formData.append('dateOfBirth', dateOfBirth);
+
+    // React Native / Expo file object
+    formData.append('avatar', {
+      uri: avatarUri,
+      name: 'avatar.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    const url = `${this.config.baseURL}/user/update/profile`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Accept: 'application/json',
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: formData,
+      });
+
+      const text = await response.text();
+      let data: any = undefined;
+      if (text && text.trim().length > 0) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          // ignore parse error, sẽ trả errorMessage chung
+        }
+      }
+
+      if (!response.ok) {
+        return {
+          errorCode: response.status,
+          errorMessage:
+            (data && (data.errorMessage || data.message)) ||
+            `HTTP ${response.status}: ${response.statusText}`,
+          success: false,
+        };
+      }
+
+      // Nếu backend đã trả FilmZoneResponse thì trả luôn
+      if (data && data.errorCode !== undefined) {
+        return data as FilmZoneResponse<UserDTO>;
+      }
+
+      return {
+        errorCode: response.status,
+        errorMessage: 'Success',
+        success: true,
+        data: data as UserDTO,
+      };
+    } catch (error: any) {
+      logger.error('updateUserProfileAvatar failed', { error });
+      return {
+        errorCode: 500,
+        errorMessage: error?.message || 'Network error',
+        success: false,
+      };
+    }
+  }
+
+  /**
    * POST /account/password/change/email/start
    */
   async startPasswordChangeByEmail(request: StartPasswordChangeRequest): Promise<FilmZoneResponse<any>> {
