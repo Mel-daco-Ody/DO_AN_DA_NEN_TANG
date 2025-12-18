@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useToast } from '../contexts/ToastContext';
 import FloatingSigninButton from './FloatingSigninButton';
 import filmzoneApi from '../services/filmzone-api';
 
@@ -16,6 +17,7 @@ type SearchItem = import('../types/api-dto').SearchResultDTO;
 export default function Header() {
   const { authState } = useAuth();
   const { language, setLanguage, t } = useLanguage();
+  const { showWarning } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -144,17 +146,7 @@ export default function Header() {
     
     // Check if user is logged in before allowing filter access
     if (!authState.user) {
-      Alert.alert(
-        t('filter.signin_required_title'),
-        t('filter.signin_required_message'),
-        [
-          { text: t('common.cancel'), style: 'cancel' },
-          { text: t('common.signin'), onPress: () => {
-            setSearchOpen(false); // Close search modal before navigating
-            router.push('/auth/signin');
-          }}
-        ]
-      );
+      showWarning(t('filter.signin_required_message') || 'Please sign in to use filters');
       return;
     }
     
@@ -201,13 +193,13 @@ export default function Header() {
     <View style={styles.wrap}>
       <View style={styles.row}>
         {/* Logo */}
-        <Pressable style={styles.logoRow} onPress={go404} android_ripple={{ color: 'rgba(255,255,255,0.1)' }}>
+        <View style={styles.logoRow}>
           <Image
             source={{ uri: 'https://flixgo.volkovdesign.com/main/img/logo.svg' }}
             style={styles.logo}
             contentFit="contain"
           />
-        </Pressable>
+        </View>
 
         {/* Categories (hamburger) */}
         <Pressable style={({ pressed }) => [styles.circleBtn, pressed && { transform: [{ scale: 0.96 }], opacity: 0.9 }]} onPress={toggleMenu}>
@@ -592,27 +584,67 @@ export default function Header() {
 const styles = StyleSheet.create({
   wrap: { 
     backgroundColor: '#2b2b31', 
-    paddingHorizontal: 12, 
+    paddingHorizontal: 10, 
     paddingTop: 60, 
     paddingBottom: 8, 
     borderBottomWidth: 1, 
     borderBottomColor: 'rgba(255,255,255,0.06)',
     position: 'absolute',
-    top: 0,                    // ← Thay đổi từ 0 thành 100px
+    top: 0,
     left: 0,
     right: 0,
     zIndex: 1000,
     elevation: 10,
   },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  logoRow: { paddingRight: 10 },
+  row: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+  },
+  logoRow: { 
+    paddingRight: 8,
+    flexShrink: 0, // Không thu nhỏ logo
+  },
   logo: { width: 90, height: 20 },
-  circleBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#1c1c23', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  circleBtn: { 
+    width: 34, 
+    height: 34, 
+    borderRadius: 17, 
+    backgroundColor: '#1c1c23', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    marginRight: 8,
+    flexShrink: 0, // Không thu nhỏ button
+  },
   burger: { width: 16, height: 2, backgroundColor: '#fff', marginVertical: 1 },
-  flexGrow: { flex: 1 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#14141b', borderRadius: 10, paddingHorizontal: 30, height: 34, marginRight: 10, minWidth: 120, borderWidth: 1, borderColor: '#e50914' },
+  flexGrow: { 
+    flex: 1,
+    minWidth: 8, // Minimum spacing
+  },
+  searchBox: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#14141b', 
+    borderRadius: 10, 
+    paddingHorizontal: 20, 
+    height: 34, 
+    marginRight: 8,
+    flex: 2, // Cho phép search box co giãn
+    minWidth: 60, // Giảm minWidth để responsive tốt hơn
+    maxWidth: 250, // Giới hạn width tối đa
+    borderWidth: 1, 
+    borderColor: '#e50914',
+  },
   searchInput: { color: '#fff', flex: 1, fontSize: 12 },
-  langBtn: { backgroundColor: '#1c1c23', height: 34, paddingHorizontal: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  langBtn: { 
+    backgroundColor: '#1c1c23', 
+    height: 34, 
+    paddingHorizontal: 10, 
+    borderRadius: 10, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    marginRight: 6,
+    flexShrink: 0, // Không thu nhỏ
+  },
   langText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   movieBoxBtn: { 
     backgroundColor: '#1c1c23', 
@@ -621,8 +653,9 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     alignItems: 'center', 
     justifyContent: 'center', 
-    marginRight: 8,
-    position: 'relative'
+    marginRight: 6,
+    position: 'relative',
+    flexShrink: 0, // Không thu nhỏ
   },
   movieBoxIcon: { fontSize: 16 },
   movieBoxBadge: {
@@ -641,11 +674,38 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  signInBtn: { backgroundColor: '#e50914', height: 34, paddingHorizontal: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  signInBtn: { 
+    backgroundColor: '#e50914', 
+    height: 34, 
+    paddingHorizontal: 12, 
+    borderRadius: 10, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    marginRight: 6,
+    flexShrink: 0, // Không thu nhỏ
+  },
   signInText: { color: '#fff', fontWeight: '700', textTransform: 'uppercase', fontSize: 11 },
-  subscriptionIndicator: { backgroundColor: '#e50914', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginRight: 8 },
+  subscriptionIndicator: { 
+    backgroundColor: '#e50914', 
+    paddingHorizontal: 8, 
+    paddingVertical: 4, 
+    borderRadius: 12, 
+    marginRight: 6,
+    flexShrink: 0, // Không thu nhỏ
+  },
   subscriptionText: { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  avatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#2a2a37', marginLeft: 4, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#e50914' },
+  avatar: { 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    backgroundColor: '#2a2a37', 
+    marginLeft: 0, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 2, 
+    borderColor: '#e50914',
+    flexShrink: 0, // Không thu nhỏ
+  },
   avatarImage: { width: 28, height: 28, borderRadius: 14 },
   avatarText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 

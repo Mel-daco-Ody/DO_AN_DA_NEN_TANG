@@ -11,6 +11,7 @@ import { TrendingMovies } from '../../components/home/TrendingMovies';
 import { NowWatching } from '../../components/home/NowWatching';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useToast } from '../../contexts/ToastContext';
 import { useOptimizedHomeData } from '../../hooks/useOptimizedHomeData';
 import { useFilterLogic } from '../../hooks/useFilterLogic';
 import { useSavedMovies } from '../../hooks/useSavedMovies';
@@ -25,6 +26,7 @@ import filmzoneApi from '../../services/filmzone-api';
 export default function HomeScreen() {
   const { authState } = useAuth();
   const { t } = useLanguage();
+  const { showWarning } = useToast();
   
   // Custom hooks for data management
   const { data: homeData, isLoading, error, refetch, refresh } = useOptimizedHomeData(authState.user?.userID);
@@ -166,17 +168,7 @@ export default function HomeScreen() {
     if (category === 'genre') {
                   // Check if user is logged in before allowing filter access
                   if (!authState.user) {
-                    Alert.alert(
-                      t('filter.signin_required_title'),
-                      t('filter.signin_required_message'),
-                      [
-                        { text: t('common.cancel'), style: 'cancel' },
-                        { text: t('common.signin'), onPress: () => {
-              setShowFilterModal(false);
-                          router.push('/auth/signin');
-                        }}
-                      ]
-                    );
+                    showWarning(t('filter.signin_required_message') || 'Please sign in to use filters');
                     return;
                   }
                   
@@ -494,7 +486,7 @@ export default function HomeScreen() {
                 style={({ pressed }) => [styles.modalBtn, styles.modalBtnPrimary, pressed && { opacity: 0.7 }]}
                 onPress={() => setShowFilterModal(false)}
               >
-                <Text style={styles.modalBtnPrimaryText}>{t('common.close')}</Text>
+                <Text style={styles.modalBtnPrimaryText}>Close</Text>
               </Pressable>
             </View>
           </View>

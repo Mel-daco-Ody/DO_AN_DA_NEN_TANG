@@ -157,7 +157,7 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
 
   const addSavedMovie = useCallback(async (movieId: number) => {
     try {
-      const response = await filmzoneApi.createSavedMovie({ userID: authState.user!.userID, movieID: movieId });
+      const response = await filmzoneApi.createSavedMovie({ movieID: movieId });
       setSavedMovieIds(prev => new Set([...prev, movieId]));
       
       // If response contains savedMovieID, add it to map

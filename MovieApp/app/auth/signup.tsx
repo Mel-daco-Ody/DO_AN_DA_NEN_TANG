@@ -4,8 +4,10 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import FlixGoLogo from '../../components/FlixGoLogo';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function SignUpScreen() {
+  const { showError, showSuccess } = useToast();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,17 +19,17 @@ export default function SignUpScreen() {
 
   const handleSignUp = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showError('Please fill in all fields');
       return;
     }
 
     if (!agree) {
-      Alert.alert('Error', 'Please agree to the Privacy Policy');
+      showError('Please agree to the Privacy Policy');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      showError('Password must be at least 6 characters');
       return;
     }
 
@@ -53,25 +55,18 @@ export default function SignUpScreen() {
       if (response.errorCode === 200 && response.data) {
         const userId = (response.data as any).userID;
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.', [
-          {
-            text: 'Verify now',
-            onPress: () => router.push({ pathname: '/auth/email-verify', params: { email: trimmedEmail, userID: String(userId) } }),
-          },
-          {
-            text: 'Later',
-            style: 'cancel',
-            onPress: () => router.push('/auth/signin'),
-          },
-        ]);
+        showSuccess('Account created successfully! Please check your email to verify your account.');
+        setTimeout(() => {
+          router.push({ pathname: '/auth/email-verify', params: { email: trimmedEmail, userID: String(userId) } });
+        }, 2000);
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', response.errorMessage || 'Registration failed');
+        showError(response.errorMessage || 'Registration failed');
       }
     } catch (error) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       console.error('Signup error:', error);
-      Alert.alert('Error', 'An error occurred during registration');
+      showError('An error occurred during registration');
     } finally {
       setIsLoading(false);
     }

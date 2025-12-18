@@ -1,18 +1,24 @@
-import { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { useRef, useState } from 'react';
+import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function SignInScreen() {
-  const { signIn } = useAuth();
+  const { authState, signIn, verifyMfa } = useAuth();
+  const { showError } = useToast();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showMfaModal, setShowMfaModal] = useState(false);
+  const [mfaCode, setMfaCode] = useState(['', '', '', '', '', '']);
+  const [isVerifyingMfa, setIsVerifyingMfa] = useState(false);
+  const mfaInputRefs = useRef<(TextInput | null)[]>([]);
   
   const goSignUp = async () => { try { await Haptics.selectionAsync(); } catch {} router.push('/auth/signup'); };
   const goHome = async () => { try { await Haptics.selectionAsync(); } catch {} router.back(); };
@@ -20,6 +26,60 @@ export default function SignInScreen() {
   const togglePasswordVisibility = async () => { 
     try { await Haptics.selectionAsync(); } catch {} 
     setShowPassword(!showPassword); 
+  };
+
+  const handleMfaDigitChange = (index: number, value: string) => {
+    const numericValue = value.replace(/[^0-9]/g, '');
+
+    const nextCode = [...mfaCode];
+    nextCode[index] = numericValue.slice(-1);
+    setMfaCode(nextCode);
+
+    if (numericValue && index < 5) {
+      mfaInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleMfaKeyPress = (index: number, key: string) => {
+    if (key === 'Backspace' && !mfaCode[index] && index > 0) {
+      mfaInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifyMfa = async () => {
+    const code = mfaCode.join('');
+
+    if (code.length !== 6) {
+      showError('Please enter the complete 6-digit code');
+      return;
+    }
+
+    if (!authState.mfaTicket) {
+      showError('Missing MFA ticket. Please try signing in again.');
+      return;
+    }
+
+    setIsVerifyingMfa(true);
+    try {
+      await Haptics.selectionAsync();
+
+      const result = await verifyMfa(authState.mfaTicket, code);
+
+      if (result.success) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setShowMfaModal(false);
+        setMfaCode(['', '', '', '', '', '']);
+        router.replace('/');
+      } else {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showError(result.error || 'Invalid verification code');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showError('An error occurred during verification');
+    } finally {
+      setIsVerifyingMfa(false);
+    }
   };
 
   return (
@@ -71,7 +131,7 @@ export default function SignInScreen() {
             style={[styles.signInButton, isLoading && styles.disabledButton]}
             onPress={async () => {
               if (!userName.trim() || !password.trim()) {
-                Alert.alert('Error', 'Please enter both username and password');
+                showError('Please enter both username and password');
                 return;
               }
 
@@ -86,14 +146,18 @@ export default function SignInScreen() {
                   router.replace('/');
                 } else if (result.requiresMfa) {
                   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                  router.push('/auth/mfa-verify');
+                  setMfaCode(['', '', '', '', '', '']);
+                  setShowMfaModal(true);
+                  setTimeout(() => {
+                    mfaInputRefs.current[0]?.focus();
+                  }, 100);
                 } else {
                   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                  Alert.alert('Login Failed', result.error || 'Invalid credentials');
+                  showError(result.error || 'Invalid credentials');
                 }
               } catch (error) {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                Alert.alert('Error', 'An error occurred during login');
+                showError('An error occurred during login');
               } finally {
                 setIsLoading(false);
               }
@@ -140,6 +204,80 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.6 },
   subText: { color: '#c7c7cc', textAlign: 'center', marginTop: 12 },
   link: { color: '#ffd166', fontWeight: '700' },
+
+  // MFA Modal styles
+  mfaOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  mfaCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#2b2b31',
+    borderRadius: 16,
+    padding: 24,
+  },
+  mfaTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  mfaSubtitle: {
+    fontSize: 14,
+    color: '#c7c7cc',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  mfaInputsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  mfaInput: {
+    width: 44,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: '#14141b',
+    borderWidth: 1,
+    borderColor: '#3a3a3a',
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  mfaButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  mfaButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mfaCancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#3a3a3a',
+  },
+  mfaConfirmButton: {
+    backgroundColor: '#e50914',
+  },
+  mfaCancelText: {
+    color: '#c7c7cc',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  mfaConfirmText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 

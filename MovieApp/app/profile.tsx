@@ -1158,7 +1158,7 @@ export default function ProfileScreen() {
 
           {/* Account Information */}
           <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account Information</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Change Password</Text>
             <TextInput
               placeholder="Email"
               placeholderTextColor={theme.colors.textSecondary}
@@ -1823,6 +1823,7 @@ const styles = StyleSheet.create({
   testNotificationBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   errorContainer: { backgroundColor: 'rgba(255, 0, 0, 0.1)', padding: 12, borderRadius: 8, marginTop: 8 },
   errorText: { color: '#ff4444', fontSize: 12, textAlign: 'center' },
+
 
   // Subscription styles
   planCard: { backgroundColor: '#14141b', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 2, borderColor: '#1c1c24', alignItems: 'center' },

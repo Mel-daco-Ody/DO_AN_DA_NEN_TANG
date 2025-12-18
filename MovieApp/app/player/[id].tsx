@@ -7,12 +7,14 @@ import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import Slider from '@react-native-community/slider';
 import { filmzoneApi } from '../../services/filmzone-api';
 
 export default function VideoPlayerScreen() {
   const { id, title, type, videoUrl, season, episode } = useLocalSearchParams();
   const { authState } = useAuth();
+  const { showInfo } = useToast();
   const videoRef = useRef<Video>(null);
   const lastProgressUpdateRef = useRef<number>(0);
   const bufferReadyLoggedRef = useRef<boolean>(false);
@@ -610,18 +612,8 @@ export default function VideoPlayerScreen() {
               onPress={async () => {
                 try {
                   await Haptics.selectionAsync();
-                  Alert.alert(
-                    'Coming Soon',
-                    'This feature will be added in a later update.',
-                    [{ text: 'OK' }]
-                  );
-                } catch (error) {
-                  Alert.alert(
-                    'Coming Soon',
-                    'This feature will be added in a later update.',
-                    [{ text: 'OK' }]
-                  );
-                }
+                } catch {}
+                showInfo('This feature will be added in a later update');
               }}
             >
               <Ionicons name="flag-outline" size={20} color="#e50914" />
@@ -673,7 +665,7 @@ export default function VideoPlayerScreen() {
       {showControls && !videoError && !requiresSubscription && (
         <View style={styles.controlsOverlay}>
           {/* Top Controls */}
-          <View style={styles.topControls}>
+          <View style={[styles.topControls, !isLandscape && styles.topControlsPortrait]}>
             <Pressable style={styles.backButton} onPress={() => { handleControlPress(); goBack(); }}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </Pressable>
@@ -755,7 +747,7 @@ export default function VideoPlayerScreen() {
           </View>
 
           {/* Bottom Controls */}
-          <View style={styles.bottomControls}>
+          <View style={[styles.bottomControls, !isLandscape && styles.bottomControlsPortrait]}>
             <View style={styles.progressContainer}>
               <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
               <View 
@@ -975,6 +967,9 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
+  topControlsPortrait: {
+    paddingTop: 40, // Đẩy cụm top controls xuống thấp hơn khi màn hình dọc
+  },
   backButton: {
     width: 40,
     height: 40,
@@ -1021,6 +1016,9 @@ const styles = StyleSheet.create({
   bottomControls: {
     paddingHorizontal: 16,
     paddingBottom: 30,
+  },
+  bottomControlsPortrait: {
+    paddingBottom: 80, // Đẩy cụm control lên cao hơn khi màn hình dọc
   },
   progressContainer: {
     flexDirection: 'row',

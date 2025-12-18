@@ -407,6 +407,65 @@ class FilmZoneApi {
     });
   }
 
+  // ==================== MFA TOTP APIs ====================
+
+  /**
+   * POST /account/mfa/totp/start
+   * Khởi tạo phiên xác thực MFA TOTP.
+   * Backend thường trả về ticket (string) hoặc object chứa ticket.
+   */
+  async startTotpMfa(): Promise<FilmZoneResponse<string>> {
+    const response = await this.request<any>('/account/mfa/totp/start', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    if (!response.success) {
+      return response as FilmZoneResponse<string>;
+    }
+
+    let ticket: string | null = null;
+    const data: any = response.data;
+
+    if (typeof data === 'string') {
+      ticket = data;
+    } else if (data) {
+      ticket =
+        data.ticket ??
+        data.mfaTicket ??
+        data.sessionId ??
+        data.sessionID ??
+        null;
+    }
+
+    return {
+      ...response,
+      data: ticket ?? '',
+    } as FilmZoneResponse<string>;
+  }
+
+  /**
+   * POST /account/mfa/totp/confirm
+   * Xác thực mã TOTP 6 số với ticket được trả về từ bước start.
+   */
+  async verifyTotpMfa(request: { ticket: string; code: string }): Promise<FilmZoneResponse<any>> {
+    return this.request<any>('/account/mfa/totp/confirm', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * POST /account/mfa/totp/disable
+   * Tắt bắt buộc MFA TOTP cho tài khoản hiện tại.
+   */
+  async disableTotpMfa(): Promise<FilmZoneResponse<any>> {
+    return this.request<any>('/account/mfa/totp/disable', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
   /**
    * POST /account/password/change/email/verify
    * Returns ticket as string in data field

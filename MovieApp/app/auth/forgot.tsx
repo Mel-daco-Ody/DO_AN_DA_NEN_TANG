@@ -4,9 +4,11 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import FlixGoLogo from '../../components/FlixGoLogo';
+import { useToast } from '../../contexts/ToastContext';
 import filmzoneApi from '../../services/filmzone-api';
 
 export default function ForgotScreen() {
+  const { showError, showSuccess } = useToast();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -25,7 +27,7 @@ export default function ForgotScreen() {
   const handleVerifyOtpCode = async () => {
     const code = otpCode.join('');
     if (code.length !== 6) {
-      Alert.alert('Error', 'Please enter the complete 6-digit code');
+      showError('Please enter the complete 6-digit code');
       return;
     }
 
@@ -56,15 +58,15 @@ export default function ForgotScreen() {
           setShowNewPassword(false);
           setShowConfirmPassword(false);
         } else {
-          Alert.alert('Error', 'Failed to get verification ticket');
+          showError('Failed to get verification ticket');
         }
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
+        showError(verifyResponse.errorMessage || 'Invalid verification code');
       }
     } catch (error) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'An error occurred while verifying code');
+      showError('An error occurred while verifying code');
     } finally {
       setIsVerifyingOtp(false);
     }
@@ -114,22 +116,22 @@ export default function ForgotScreen() {
 
   const handleCommitForgotPassword = async () => {
     if (!newPassword.trim() || !confirmNewPassword.trim()) {
-      Alert.alert('Error', 'Please fill in all password fields');
+      showError('Please fill in all password fields');
       return;
     }
 
     if (newPassword !== confirmNewPassword) {
-      Alert.alert('Error', 'New passwords do not match');
+      showError('New passwords do not match');
       return;
     }
 
     if (newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters long');
+      showError('New password must be at least 6 characters long');
       return;
     }
 
     if (!forgotPasswordTicket) {
-      Alert.alert('Error', 'Missing verification ticket. Please start the process again.');
+      showError('Missing verification ticket. Please start the process again.');
       return;
     }
 
@@ -149,27 +151,19 @@ export default function ForgotScreen() {
       
       if (isOk) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Success',
-          'Password reset successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setShowForgotPasswordModal(false);
-                setNewPassword('');
-                setConfirmNewPassword('');
-                setForgotPasswordTicket(null);
-                setShowNewPassword(false);
-                setShowConfirmPassword(false);
-                router.back();
-              }
-            }
-          ]
-        );
+        showSuccess('Password reset successfully!');
+        setTimeout(() => {
+          setShowForgotPasswordModal(false);
+          setNewPassword('');
+          setConfirmNewPassword('');
+          setForgotPasswordTicket(null);
+          setShowNewPassword(false);
+          setShowConfirmPassword(false);
+          router.back();
+        }, 2000);
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', commitResponse.errorMessage || 'Failed to reset password');
+        showError(commitResponse.errorMessage || 'Failed to reset password');
       }
     } catch (error: any) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -179,7 +173,7 @@ export default function ForgotScreen() {
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      Alert.alert('Error', errorMessage);
+      showError(errorMessage);
     } finally {
       setIsCommittingPassword(false);
     }
@@ -200,7 +194,7 @@ export default function ForgotScreen() {
             style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }, isLoading && styles.disabledButton]}
             onPress={async () => {
               if (!email.trim()) {
-                Alert.alert('Error', 'Please enter your email address');
+                showError('Please enter your email address');
                 return;
               }
 
@@ -226,7 +220,7 @@ export default function ForgotScreen() {
                   }, 100);
                 } else {
                   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                  Alert.alert('Error', response.errorMessage || 'Failed to send reset email');
+                  showError(response.errorMessage || 'Failed to send reset email');
                 }
               } catch (error: any) {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -234,7 +228,7 @@ export default function ForgotScreen() {
                 if (error?.message) {
                   errorMessage = error.message;
                 }
-                Alert.alert('Error', errorMessage);
+                showError(errorMessage);
               } finally {
                 setIsLoading(false);
               }

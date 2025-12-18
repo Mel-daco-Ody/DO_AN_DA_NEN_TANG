@@ -193,18 +193,49 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const userTwoFactor = userFromResponse?.twoFactorEnabled;
         
         if (userTwoFactor) {
-          // Store pending login to be completed by verifyMfa
-          setPendingLogin(loginData);
-          setAuthState(prev => ({
-            ...prev,
-            requiresMfa: true,
-            mfaTicket: (loginData as any).sessionId ? String((loginData as any).sessionId) : null,
-          }));
-          return {
-            success: false,
-            requiresMfa: true,
-            mfaTicket: (loginData as any).sessionId ? String((loginData as any).sessionId) : null,
-          };
+          // Start TOTP MFA flow via backend
+          try {
+            const startMfaRes = await filmzoneApi.startTotpMfa();
+            const ok =
+              (startMfaRes as any).success === true ||
+              (startMfaRes.errorCode >= 200 && startMfaRes.errorCode < 300);
+
+            if (!ok || !startMfaRes.data) {
+              console.error('AuthContext: Failed to start TOTP MFA:', startMfaRes.errorMessage);
+              return {
+                success: false,
+                error: startMfaRes.errorMessage || 'Failed to start MFA. Please try again.',
+              };
+            }
+
+            const mfaTicket =
+              typeof startMfaRes.data === 'string'
+                ? startMfaRes.data
+                : (startMfaRes.data as any).ticket ||
+                  (startMfaRes.data as any).mfaTicket ||
+                  (startMfaRes.data as any).sessionId ||
+                  null;
+
+            // Store pending login to be completed by verifyMfa
+            setPendingLogin({ ...loginData, mfaTicket });
+            setAuthState(prev => ({
+              ...prev,
+              requiresMfa: true,
+              mfaTicket: mfaTicket,
+            }));
+
+            return {
+              success: false,
+              requiresMfa: true,
+              mfaTicket,
+            };
+          } catch (err) {
+            console.error('AuthContext: Exception while starting TOTP MFA:', err);
+            return {
+              success: false,
+              error: 'Failed to start MFA. Please check your connection and try again.',
+            };
+          }
         }
         
         // Login successful - always get user info from API since real API doesn't return user in login response
@@ -278,58 +309,74 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Local MFA verification: mock verification without calling non-existent API method
   const verifyMfa = async (mfaTicket: string, code: string) => {
     try {
-      // Simple mock: accept '123456' as the valid code for development
       if (!pendingLogin) {
         return { success: false, error: 'No pending MFA login found' };
       }
-      if (code === '123456') {
-        const loginData = pendingLogin;
-        
-        // Set token in API client
-        if (loginData.token) {
-          movieAppApi.setToken(loginData.token);
-          filmzoneApi.setToken(loginData.token);
-        }
 
-        // Map user data
-        let userData: AuthUser | null = null;
-        if (loginData.user) {
-          userData = mapUserDTOToAuthUser(loginData.user);
-        }
-        
-        // Try to get full user info from API
-        if (!userData) {
-          try {
-            const userResponse = await movieAppApi.getCurrentUser();
-            if (userResponse.errorCode === 200 && userResponse.data) {
-              userData = mapUserDTOToAuthUser(userResponse.data);
-            }
-          } catch (error) {
-            console.warn('Failed to get current user:', error);
-          }
-        }
+      // Verify TOTP code with backend
+      const verifyRes = await filmzoneApi.verifyTotpMfa({
+        ticket: mfaTicket,
+        code: code.trim(),
+      });
 
-        if (!userData) {
-          return { success: false, error: 'Unable to retrieve user data' };
-        }
+      const ok =
+        (verifyRes as any).success === true ||
+        (verifyRes.errorCode >= 200 && verifyRes.errorCode < 300);
 
-        setAuthState({
-          isAuthenticated: true,
-          user: userData,
-          token: loginData.token,
-          refreshToken: loginData.refreshToken,
-          requiresMfa: false,
-          mfaTicket: null,
-        });
-        setPendingLogin(null);
-        return { success: true };
+      if (!ok) {
+        return {
+          success: false,
+          error: verifyRes.errorMessage || 'Invalid verification code',
+        };
       }
-      return { success: false, error: 'Invalid verification code' };
+
+      const loginData = pendingLogin;
+
+      // Ensure token is set on API clients
+      if (loginData.token) {
+        movieAppApi.setToken(loginData.token);
+        filmzoneApi.setToken(loginData.token);
+      }
+
+      // Map user data
+      let userData: AuthUser | null = null;
+      if (loginData.user) {
+        userData = mapUserDTOToAuthUser(loginData.user);
+      }
+
+      // Try to get full user info from API
+      if (!userData) {
+        try {
+          const userResponse = await movieAppApi.getCurrentUser();
+          if (userResponse.errorCode === 200 && userResponse.data) {
+            userData = mapUserDTOToAuthUser(userResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to get current user:', error);
+        }
+      }
+
+      if (!userData) {
+        return { success: false, error: 'Unable to retrieve user data' };
+      }
+
+      setAuthState({
+        isAuthenticated: true,
+        user: userData,
+        token: loginData.token,
+        refreshToken: loginData.refreshToken,
+        requiresMfa: false,
+        mfaTicket: null,
+      });
+      setPendingLogin(null);
+      return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'MFA verification failed' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'MFA verification failed',
+      };
     }
   };
 

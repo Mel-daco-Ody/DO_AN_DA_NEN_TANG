@@ -9,6 +9,7 @@ import WaveAnimation from '../../../components/WaveAnimation';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { useSavedMoviesContext } from '../../../contexts/SavedMoviesContext';
+import { useToast } from '../../../contexts/ToastContext';
 import * as Haptics from 'expo-haptics';
 import filmzoneApi from '../../../services/filmzone-api';
 
@@ -24,10 +25,13 @@ export default function SeriesDetailsScreen() {
   const { authState } = useAuth();
   const { t } = useLanguage();
   const { refreshSavedMovies, isMovieSaved, addSavedMovie, removeSavedMovie } = useSavedMoviesContext();
+  const { showSuccess, showError, showWarning } = useToast();
   const seriesId = parseInt(id as string);
   const [commentText, setCommentText] = React.useState('');
   const [comments, setComments] = React.useState<any[]>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
+  const [replyingToCommentID, setReplyingToCommentID] = React.useState<number | null>(null);
+  const [replyText, setReplyText] = React.useState('');
   const [selectedSeason, setSelectedSeason] = React.useState(1);
   const [seriesData, setSeriesData] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -260,7 +264,7 @@ export default function SeriesDetailsScreen() {
   const handleMovieBoxToggle = async () => {
     try {
       if (!authState.user || !authState.user.userID) {
-        Alert.alert('Login Required', 'Please login to save series to your list');
+        showWarning('Please login to save series to your list');
         return;
       }
       
@@ -271,27 +275,133 @@ export default function SeriesDetailsScreen() {
           // Remove from saved movies using context
           console.log('SeriesDetail: Removing series from saved list:', movieId);
           await removeSavedMovie(movieId);
-          Alert.alert('Success', 'Series removed from your list');
+          showSuccess('Series removed from your list');
         } else {
           // Add to saved movies using context
           console.log('SeriesDetail: Adding series to saved list:', movieId);
           await addSavedMovie(movieId);
-          Alert.alert('Success', 'Series added to your list');
+          showSuccess('Series added to your list!');
         }
         // Context is already updated, UI will automatically reflect the change
       } catch (error) {
         console.error('SeriesDetail: Error toggling saved status:', error);
-        Alert.alert('Error', 'Failed to update your series list');
+        showError('Failed to update your series list');
       }
     } catch (error) {
       console.error('SeriesDetail: Error toggling saved status:', error);
-      Alert.alert('Error', 'Failed to update your series list');
+      showError('Failed to update your series list');
+    }
+  };
+
+  // Helper function to organize comments with replies
+  const organizeCommentsWithReplies = (allComments: any[]) => {
+    // Separate parent comments and replies
+    const parentComments = allComments.filter((c: any) => !c.parentID || c.parentID === null || c.parentID === 0);
+    const replies = allComments.filter((c: any) => c.parentID && c.parentID !== null && c.parentID !== 0);
+    
+    // Group replies by parentID
+    const repliesByParent = new Map<number, any[]>();
+    replies.forEach((reply: any) => {
+      const parentID = Number(reply.parentID);
+      if (!repliesByParent.has(parentID)) {
+        repliesByParent.set(parentID, []);
+      }
+      repliesByParent.get(parentID)!.push(reply);
+    });
+    
+    // Sort parent comments by date (newest first)
+    const sortedParents = [...parentComments].sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+    
+    // Sort replies by date (oldest first - to show conversation flow)
+    repliesByParent.forEach((replyList) => {
+      replyList.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateA - dateB; // Oldest first
+      });
+    });
+    
+    return { sortedParents, repliesByParent };
+  };
+
+  const handleReplyComment = async (parentCommentID: number) => {
+    const text = replyText.trim();
+    if (!text) return;
+    
+    if (!authState.user || !authState.user.userID) {
+      showWarning('Please login to reply to comments');
+      return;
+    }
+    
+    try {
+      const response = await filmzoneApi.createComment({
+        movieID: parseInt(id as string),
+        userID: authState.user.userID,
+        content: text,
+        parentID: parentCommentID,
+        likeCount: 0,
+      });
+      
+      const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+      if (responseOk) {
+        showSuccess('Reply posted successfully!');
+        // Reload comments to get updated list
+        const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+        const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+        if (commentsOk && commentsResponse.data) {
+          const commentsData = commentsResponse.data || [];
+          // Sort comments by createdAt descending (newest first)
+          const sortedComments = [...commentsData].sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA; // Descending order (newest first)
+          });
+          setComments(sortedComments);
+          
+          // Fetch user data for each unique userID in comments
+          const uniqueUserIDs = [...new Set(
+            commentsData
+              .map((c: any) => c.userID)
+              .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+              .map((id: any) => Number(id))
+          )];
+          
+          const userDataMap = new Map<number, any>();
+          
+          await Promise.all(
+            uniqueUserIDs.map(async (userID: number) => {
+              try {
+                const userResponse = await filmzoneApi.getUserById(userID);
+                const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                if (userOk && userResponse.data) {
+                  userDataMap.set(userID, userResponse.data);
+                }
+              } catch (err) {
+                console.error(`Error loading user data for userID ${userID}:`, err);
+              }
+            })
+          );
+          
+          setCommentUsers(userDataMap);
+        }
+        setReplyText('');
+        setReplyingToCommentID(null);
+      } else {
+        showError(response.errorMessage || 'Failed to post reply');
+      }
+    } catch (error) {
+      console.error('Error replying to comment:', error);
+      showError('Failed to post reply');
     }
   };
 
   const handleAddRating = async (stars: number) => {
     if (!authState.user) {
-      Alert.alert('Login Required', 'Please login to rate series');
+      showWarning('Please login to rate series');
       return;
     }
     
@@ -845,65 +955,129 @@ export default function SeriesDetailsScreen() {
             </Pressable>
           </View>
         </View>
+
         
         {/* Comments List */}
-        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
-          {'All Comments'} ({comments.length})
-        </Text>
-        <ScrollView 
-          style={styles.commentsList} 
-          nestedScrollEnabled={true}
-          showsVerticalScrollIndicator={true}
-        >
-          {comments.length === 0 ? (
-            <Text style={styles.noCommentsText}>{'No comments yet. Be the first to comment!'}</Text>
-          ) : (
-            comments.map((c, idx) => {
-              const userID = c.userID ? Number(c.userID) : null;
-              const user = userID ? commentUsers.get(userID) : null;
-              const userName = user?.name || user?.userName || c.userName || 'User';
-              const userAvatar = user?.avatar || user?.profilePicture || null;
-              const avatarInitial = userName.charAt(0).toUpperCase();
-              
-              // Debug log
-              if (!user && userID) {
-                console.log(`User data not found for userID ${userID} in comment ${c.commentID}`);
-              }
-              
-              return (
-                <View key={c.commentID || idx} style={styles.commentItem}>
-                  <View style={styles.commentAvatar}>
-                    {userAvatar ? (
-                      <Image
-                        source={{ uri: userAvatar }}
-                        style={styles.commentAvatarImage}
-                      />
-                    ) : (
-                      <Text style={styles.commentAvatarText}>{avatarInitial}</Text>
-                    )}
+        {(() => {
+          const { sortedParents, repliesByParent } = organizeCommentsWithReplies(comments);
+          const totalCommentsCount = comments.length;
+          
+          const renderComment = (c: any, idx: number, isReply: boolean = false) => {
+            const userID = c.userID ? Number(c.userID) : null;
+            const user = userID ? commentUsers.get(userID) : null;
+            const userName = user?.name || user?.userName || c.userName || 'User';
+            const userAvatar = user?.avatar || user?.profilePicture || null;
+            const avatarInitial = userName.charAt(0).toUpperCase();
+            
+            return (
+              <View key={c.commentID || idx} style={[styles.commentItem, isReply && styles.replyCommentItem]}>
+                <View style={styles.commentAvatar}>
+                  {userAvatar ? (
+                    <Image
+                      source={{ uri: userAvatar }}
+                      style={styles.commentAvatarImage}
+                    />
+                  ) : (
+                    <Text style={styles.commentAvatarText}>{avatarInitial}</Text>
+                  )}
+                </View>
+                <View style={styles.commentContent}>
+                  <View style={styles.commentHeader}>
+                    <Text style={styles.commentAuthor}>{userName}</Text>
+                    <Text style={styles.commentTime}>
+                      {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
+                    </Text>
                   </View>
-                  <View style={styles.commentContent}>
-                    <View style={styles.commentHeader}>
-                      <Text style={styles.commentAuthor}>{userName}</Text>
-                      <Text style={styles.commentTime}>
-                        {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
-                      </Text>
-                    </View>
-                    <Text style={styles.commentText}>{c.content}</Text>
+                  <Text style={styles.commentText}>{c.content}</Text>
+                  {!isReply && (
                     <View style={styles.commentActions}>
                       <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
                         <Text style={styles.commentActionText}>Likes {c.likeCount || 0}</Text>
                       </Pressable>
-                      <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
-                        <Text style={styles.commentActionText}>Trả lời</Text>
+                      <Pressable 
+                        style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}
+                        onPress={() => {
+                          if (replyingToCommentID === c.commentID) {
+                            setReplyingToCommentID(null);
+                            setReplyText('');
+                          } else {
+                            setReplyingToCommentID(c.commentID);
+                            setReplyText('');
+                          }
+                        }}
+                      >
+                        <Text style={styles.commentActionText}>
+                          {replyingToCommentID === c.commentID ? 'Hủy' : 'Trả lời'}
+                        </Text>
                       </Pressable>
                     </View>
-                  </View>
+                  )}
+                  {!isReply && replyingToCommentID === c.commentID && (
+                    <View style={styles.replyContainer}>
+                      <View style={styles.replyInputContainer}>
+                        <TextInput
+                          placeholder="Viết phản hồi..."
+                          placeholderTextColor="#8e8e93"
+                          value={replyText}
+                          onChangeText={setReplyText}
+                          multiline
+                          style={styles.replyInput}
+                        />
+                      </View>
+                      <View style={styles.replyActions}>
+                        <Pressable
+                          onPress={() => {
+                            setReplyingToCommentID(null);
+                            setReplyText('');
+                          }}
+                          style={({ pressed }) => [styles.replyCancelBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <Text style={styles.replyCancelText}>Hủy</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleReplyComment(c.commentID)}
+                          style={({ pressed }) => [styles.replySubmitBtn, pressed && { opacity: 0.9 }]}
+                          disabled={!replyText.trim()}
+                        >
+                          <Text style={[styles.replySubmitText, !replyText.trim() && { opacity: 0.5 }]}>
+                            Gửi
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                 </View>
-              );
-            })
-          )}
-        </ScrollView>
+              </View>
+            );
+          };
+          
+          return (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
+                {'All Comments'} ({totalCommentsCount})
+              </Text>
+              <ScrollView 
+                style={styles.commentsList} 
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {sortedParents.length === 0 ? (
+                  <Text style={styles.noCommentsText}>{'No comments yet. Be the first to comment!'}</Text>
+                ) : (
+                  sortedParents.map((parentComment, idx) => {
+                    const replies = repliesByParent.get(parentComment.commentID) || [];
+                    return (
+                      <View key={parentComment.commentID || idx}>
+                        {renderComment(parentComment, idx, false)}
+                        {replies.map((reply, replyIdx) => renderComment(reply, replyIdx, true))}
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </>
+          );
+        })()}
         </View>
       </ScrollView>
       </View>
@@ -1297,6 +1471,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  replyCommentItem: {
+    marginLeft: 40, // Indent replies to the right
+    backgroundColor: 'rgba(30, 30, 40, 0.9)', // Slightly darker for visual distinction
+    borderLeftWidth: 3,
+    borderLeftColor: '#e50914', // Red border on left to show it's a reply
+  },
   commentAvatar: {
     width: 44,
     height: 44,
@@ -1365,6 +1545,53 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 12,
     fontWeight: '600'
+  },
+  replyContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+  replyInputContainer: {
+    marginBottom: 8,
+  },
+  replyInput: {
+    backgroundColor: '#121219',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 14,
+    minHeight: 60,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  replyActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  replyCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  replyCancelText: {
+    color: '#aaa',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  replySubmitBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#e50914',
+  },
+  replySubmitText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   categoryLinks: {
     flexDirection: 'row',
