@@ -16,7 +16,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#2b2b31"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.mel_daco_ody.MovieApp"
     },
     "web": {
@@ -38,6 +37,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4260f5c8-0521-466e-8660-2054cfb71102"
+      }
     }
   }
 }

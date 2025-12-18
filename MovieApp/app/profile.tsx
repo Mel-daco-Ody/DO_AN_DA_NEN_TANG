@@ -641,9 +641,9 @@ export default function ProfileScreen() {
       });
       
       const isOk = (verifyResponse as any).success === true || (verifyResponse.errorCode >= 200 && verifyResponse.errorCode < 300);
-      
+                          
       if (isOk) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         // Lưu ticket từ response - data là string trực tiếp (ticket)
         const ticket = verifyResponse.data || '';
         if (ticket) {
@@ -652,18 +652,18 @@ export default function ProfileScreen() {
           setOtpCode(['', '', '', '', '', '']);
           setShowPasswordChangeModal(true);
           setOldPassword('');
-          setNewPassword('');
+                            setNewPassword('');
           setShowOldPassword(false);
           setShowNewPassword(false);
-        } else {
+                          } else {
           Alert.alert('Error', 'Failed to get verification ticket');
-        }
-      } else {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
-      }
-    } catch (error) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                          }
+                        } else {
+                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                          Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
+                        }
+                      } catch (error) {
+                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Error', 'An error occurred while verifying code');
     } finally {
       setIsVerifyingOtp(false);
@@ -681,7 +681,7 @@ export default function ProfileScreen() {
       digits.forEach((digit, i) => {
         if (index + i < 6) {
           newCode[index + i] = digit;
-        }
+                    }
       });
       setOtpCode(newCode);
       
@@ -693,7 +693,7 @@ export default function ProfileScreen() {
         // Nếu đã điền đủ 6 số, blur input
         otpInputRefs.current[5]?.blur();
       }
-    } else {
+      } else {
       const newCode = [...otpCode];
       newCode[index] = numericValue;
       setOtpCode(newCode);
