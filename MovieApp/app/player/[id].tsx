@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, Pressable, Dimensions, StatusBar, Animated, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Dimensions, StatusBar, Animated, ScrollView, Alert } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ export default function VideoPlayerScreen() {
   const { authState } = useAuth();
   const videoRef = useRef<Video>(null);
   const lastProgressUpdateRef = useRef<number>(0);
+  const bufferReadyLoggedRef = useRef<boolean>(false);
   const [status, setStatus] = useState({});
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -26,6 +27,7 @@ export default function VideoPlayerScreen() {
   const [currentSourceId, setCurrentSourceId] = useState<number | undefined>(undefined);
   const [currentEpisodeSourceId, setCurrentEpisodeSourceId] = useState<number | undefined>(undefined);
   const [videoError, setVideoError] = useState<boolean>(false);
+  const [requiresSubscription, setRequiresSubscription] = useState<boolean>(false);
   const [waveAnimation1] = useState(new Animated.Value(0));
   const [waveAnimation2] = useState(new Animated.Value(0));
   const [waveAnimation3] = useState(new Animated.Value(0));
@@ -38,6 +40,8 @@ export default function VideoPlayerScreen() {
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
   const [selectedSubtitle, setSelectedSubtitle] = useState('Vietnamese');
+  const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
+  const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Subtitle languages data
   const subtitleLanguages = [
@@ -53,12 +57,56 @@ export default function VideoPlayerScreen() {
     { id: 'es', name: 'Español', code: 'es' },
   ];
 
+  // Check if user has valid VIP subscription
+  const checkVipSubscription = async (): Promise<boolean> => {
+    try {
+      const userId = authState.user?.userID;
+      if (!userId) {
+        return false;
+      }
+
+      const subsResponse = await filmzoneApi.getSubscriptionsByUser(userId);
+      const subsOk = (subsResponse as any).success === true || (subsResponse.errorCode >= 200 && subsResponse.errorCode < 300);
+      
+      if (subsOk && subsResponse.data) {
+        const subsArr = Array.isArray(subsResponse.data) ? subsResponse.data : [subsResponse.data];
+        if (subsArr.length > 0) {
+          // Get the latest subscription (max subscriptionID)
+          const latestSub = subsArr
+            .filter((s: any) => s)
+            .sort((a: any, b: any) => {
+              const aId = Number(a.subscriptionID ?? a.subscriptionId ?? 0);
+              const bId = Number(b.subscriptionID ?? b.subscriptionId ?? 0);
+              return bId - aId;
+            })[0];
+
+          // Check if currentPeriodEnd >= current time
+          if (latestSub?.currentPeriodEnd) {
+            const periodEnd = new Date(latestSub.currentPeriodEnd);
+            const now = new Date();
+            return periodEnd >= now;
+          }
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking VIP subscription:', error);
+      return false;
+    }
+  };
+
   // Load video source from API
   useEffect(() => {
     const loadVideoSource = async () => {
       try {
         setIsLoadingVideo(true);
         setVideoError(false);
+        setLoadingElapsedSeconds(0);
+        
+        // Start interval to update loading time every 10 seconds
+        loadingIntervalRef.current = setInterval(() => {
+          setLoadingElapsedSeconds(prev => prev + 10);
+        }, 10000);
         
         console.log('VideoPlayerScreen: loadVideoSource params', { id, type, episode, videoUrl });
 
@@ -70,25 +118,56 @@ export default function VideoPlayerScreen() {
           if (sourcesResponse.errorCode >= 200 && sourcesResponse.errorCode < 300 && sourcesResponse.data && sourcesResponse.data.length > 0) {
             // Get the first active source (or VIP source if user is VIP)
             const activeSources = sourcesResponse.data.filter((s: any) => s.isActive);
-            const userIsVip = authState.user?.subscription?.plan && authState.user.subscription.plan !== 'starter';
             
-            let selectedSource = activeSources.find((s: any) => !s.isVipOnly) || activeSources[0];
-            if (userIsVip) {
-              selectedSource = activeSources.find((s: any) => s.isVipOnly) || activeSources[0] || selectedSource;
+            // Check if user has valid VIP subscription
+            const hasValidVipSubscription = await checkVipSubscription();
+            
+            // Find non-VIP source first
+            let selectedSource = activeSources.find((s: any) => !s.isVipOnly);
+            
+            // If no non-VIP source, check VIP source
+            if (!selectedSource) {
+              const vipSource = activeSources.find((s: any) => s.isVipOnly);
+              if (vipSource) {
+                if (hasValidVipSubscription) {
+                  selectedSource = vipSource;
+                } else {
+                  // User needs subscription
+                  setRequiresSubscription(true);
+                  setVideoError(false);
+                  setIsLoadingVideo(false);
+                  return;
+                }
+              } else {
+                // No sources available
+                selectedSource = activeSources[0];
+              }
+            } else if (hasValidVipSubscription) {
+              // Prefer VIP source if user has valid subscription
+              const vipSource = activeSources.find((s: any) => s.isVipOnly);
+              if (vipSource) {
+                selectedSource = vipSource;
+              }
             }
             
             if (selectedSource?.sourceUrl) {
               setVideoUri(selectedSource.sourceUrl);
               setCurrentEpisodeSourceId(selectedSource.episodeSourceID);
+              setRequiresSubscription(false);
+              bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
+              // Video will start loading in chunks automatically via HTTP Range requests
+              // expo-av handles progressive loading natively
             } else {
               // No valid source found - show 404 error
               setVideoError(true);
               setVideoUri('');
+              setRequiresSubscription(false);
             }
           } else {
             // No sources found - show 404 error
             setVideoError(true);
             setVideoUri('');
+            setRequiresSubscription(false);
           }
         } else {
           // Load movie sources via public endpoint by movieId
@@ -103,30 +182,62 @@ export default function VideoPlayerScreen() {
 
             if (sourcesData.length > 0) {
               const activeSources = sourcesData.filter((s: any) => s.isActive !== false);
-              const userIsVip = authState.user?.subscription?.plan && authState.user.subscription.plan !== 'starter';
-
-              let selectedSource = activeSources.find((s: any) => !s.isVipOnly) || activeSources[0];
-              if (userIsVip) {
-                selectedSource = activeSources.find((s: any) => s.isVipOnly) || activeSources[0] || selectedSource;
+              
+              // Check if user has valid VIP subscription
+              const hasValidVipSubscription = await checkVipSubscription();
+              
+              // Find non-VIP source first
+              let selectedSource = activeSources.find((s: any) => !s.isVipOnly);
+              
+              // If no non-VIP source, check VIP source
+              if (!selectedSource) {
+                const vipSource = activeSources.find((s: any) => s.isVipOnly);
+                if (vipSource) {
+                  if (hasValidVipSubscription) {
+                    selectedSource = vipSource;
+                  } else {
+                    // User needs subscription
+                    setRequiresSubscription(true);
+                    setVideoError(false);
+                    setIsLoadingVideo(false);
+                    return;
+                  }
+                } else {
+                  // No sources available
+                  selectedSource = activeSources[0];
+                }
+              } else if (hasValidVipSubscription) {
+                // Prefer VIP source if user has valid subscription
+                const vipSource = activeSources.find((s: any) => s.isVipOnly);
+                if (vipSource) {
+                  selectedSource = vipSource;
+                }
               }
 
               if (selectedSource?.sourceUrl) {
                 setVideoUri(selectedSource.sourceUrl);
                 setCurrentSourceId((selectedSource as any).sourceID || (selectedSource as any).movieSourceID);
+                setRequiresSubscription(false);
+                bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
+                // Video will start loading in chunks automatically via HTTP Range requests
+                // expo-av handles progressive loading natively
               } else {
                 console.log('VideoPlayerScreen: no valid sourceUrl in selectedSource', selectedSource);
                 setVideoError(true);
                 setVideoUri('');
+                setRequiresSubscription(false);
               }
             } else {
               console.log('VideoPlayerScreen: no movie sources data after parsing (public)', sourcesData);
               setVideoError(true);
               setVideoUri('');
+              setRequiresSubscription(false);
             }
           } else {
             console.log('VideoPlayerScreen: movie source (public) API not ok', sourcesResponse);
             setVideoError(true);
             setVideoUri('');
+            setRequiresSubscription(false);
           }
         }
       } catch (error) {
@@ -135,11 +246,25 @@ export default function VideoPlayerScreen() {
         setVideoError(true);
         setVideoUri('');
       } finally {
+        // Clear interval when loading finishes
+        if (loadingIntervalRef.current) {
+          clearInterval(loadingIntervalRef.current);
+          loadingIntervalRef.current = null;
+        }
         setIsLoadingVideo(false);
+        setLoadingElapsedSeconds(0);
       }
     };
-    
+
     loadVideoSource();
+
+    // Cleanup interval on unmount
+    return () => {
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
+    };
   }, [id, type, episode, videoUrl, authState.user]);
 
   // Handle screen orientation - Allow both portrait and landscape
@@ -243,6 +368,27 @@ export default function VideoPlayerScreen() {
     if (playbackStatus.isLoaded) {
       setCurrentTime(playbackStatus.positionMillis || 0);
       setDuration(playbackStatus.durationMillis || 0);
+      
+      // expo-av automatically handles progressive chunk loading via HTTP Range requests
+      // Video loads in chunks (typically 10-30 seconds at a time) to avoid long waits
+      // The player will automatically buffer ahead while playing
+      // No need for manual chunk management - expo-av handles it natively
+      
+      // Log when buffer is ready (at least 10 seconds buffered)
+      if (!bufferReadyLoggedRef.current && playbackStatus.durationMillis) {
+        const bufferedDuration = playbackStatus.playableDurationMillis || 0;
+        const minBufferSeconds = 10; // Minimum 10 seconds buffer
+        const minBufferMillis = minBufferSeconds * 1000;
+        
+        if (bufferedDuration >= minBufferMillis) {
+          bufferReadyLoggedRef.current = true;
+          const bufferedSeconds = Math.round(bufferedDuration / 1000);
+          const totalDurationSeconds = Math.round(playbackStatus.durationMillis / 1000);
+          console.log(`[VideoPlayer] Buffer ready: ${bufferedSeconds}s buffered out of ${totalDurationSeconds}s total duration`);
+          console.log(`[VideoPlayer] Video is ready to play without interruption`);
+        }
+      }
+      
       // Only update isPlaying if the status actually changed
       if (playbackStatus.isPlaying !== isPlaying) {
         setIsPlaying(playbackStatus.isPlaying);
@@ -411,11 +557,44 @@ export default function VideoPlayerScreen() {
       {isLoadingVideo && (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Đang tải video...</Text>
+          {loadingElapsedSeconds > 0 && (
+            <Text style={styles.loadingTimeText}>
+              Đã tải {loadingElapsedSeconds} giây...
+            </Text>
+          )}
         </View>
       )}
       
+      {/* Subscription Required */}
+      {!isLoadingVideo && requiresSubscription && (
+        <View style={styles.errorContainer}>
+          {/* Top Buttons - Left Side */}
+          <View style={styles.topButtonsContainer}>
+            <Pressable style={styles.backButtonError} onPress={goBack}>
+              <Ionicons name="arrow-back" size={24} color="#e50914" />
+            </Pressable>
+          </View>
+          
+          {/* Subscription Required Content - Centered */}
+          <View style={styles.errorContent}>
+            <Ionicons name="lock-closed-outline" size={64} color="#e50914" />
+            <Text style={styles.errorTitle}>Subscription Required</Text>
+            <Text style={styles.errorMessage}>You must subscribe to watch this movie.</Text>
+            <Text style={styles.errorSubtext}>This content is available for VIP subscribers only</Text>
+            <Pressable 
+              style={styles.subscribeButton}
+              onPress={() => {
+                router.push('/payment');
+              }}
+            >
+              <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Error 404 */}
-      {!isLoadingVideo && videoError && (
+      {!isLoadingVideo && videoError && !requiresSubscription && (
         <View style={styles.errorContainer}>
           {/* Top Buttons - Left Side */}
           <View style={styles.topButtonsContainer}>
@@ -423,11 +602,29 @@ export default function VideoPlayerScreen() {
               <Ionicons name="arrow-back" size={24} color="#e50914" />
             </Pressable>
             
-            <Pressable style={styles.reportButtonError} onPress={() => {
-              // TODO: Implement report error functionality
-              console.log('Report error pressed');
-            }}>
-              <Ionicons name="flag-outline" size={24} color="#e50914" />
+            <Pressable 
+              style={({ pressed }) => [
+                styles.reportButtonError,
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={async () => {
+                try {
+                  await Haptics.selectionAsync();
+                  Alert.alert(
+                    'Coming Soon',
+                    'This feature will be added in a later update.',
+                    [{ text: 'OK' }]
+                  );
+                } catch (error) {
+                  Alert.alert(
+                    'Coming Soon',
+                    'This feature will be added in a later update.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }}
+            >
+              <Ionicons name="flag-outline" size={20} color="#e50914" />
             </Pressable>
           </View>
           
@@ -442,21 +639,38 @@ export default function VideoPlayerScreen() {
       )}
       
       {/* Video Player */}
-      {!isLoadingVideo && !videoError && videoUri && (
+      {!isLoadingVideo && !videoError && !requiresSubscription && videoUri && (
         <Video
           ref={videoRef}
           style={styles.video}
-          source={{ uri: videoUri }}
+          source={{ 
+            uri: videoUri,
+            // HTTP Range requests are automatically handled by expo-av
+            // Video will load in chunks as needed
+          }}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
           isLooping={false}
           isMuted={isMuted}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+          progressUpdateIntervalMillis={500}
+          // Optimize buffering - update more frequently for better UX
+          useNativeControls={false}
+          // Enable faster playback start
+          shouldCorrectPitch={false}
+          // Start playing when enough buffer is available (default behavior)
+          onLoadStart={() => {
+            console.log('VideoPlayerScreen: Video load started');
+          }}
+          onLoad={() => {
+            console.log('VideoPlayerScreen: Video loaded, ready to play');
+            // Video is ready, can start playing
+          }}
         />
       )}
 
       {/* Controls Overlay */}
-      {showControls && !videoError && (
+      {showControls && !videoError && !requiresSubscription && (
         <View style={styles.controlsOverlay}>
           {/* Top Controls */}
           <View style={styles.topControls}>
@@ -662,6 +876,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  loadingTimeText: {
+    color: '#8e8e93',
+    fontSize: 14,
+    fontWeight: '400',
+    marginTop: 8,
+  },
   errorContainer: {
     flex: 1,
     backgroundColor: '#000',
@@ -709,14 +929,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  subscribeButton: {
+    backgroundColor: '#e50914',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subscribeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   reportButtonError: {
-    width: 44,
-    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderWidth: 2,
     borderColor: '#e50914',
     borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
   },
   video: {
     flex: 1,

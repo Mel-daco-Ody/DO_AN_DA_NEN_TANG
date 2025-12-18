@@ -91,7 +91,7 @@ export default function PaymentServiceScreen() {
     // Chỉ sử dụng phương thức thanh toán VNPay (danh sách tĩnh)
     try {
       setIsLoadingMethods(true);
-      setAvailableMethods(paymentMethods);
+        setAvailableMethods(paymentMethods);
       // Tự động chọn VNPay nếu chưa có phương thức nào được chọn
       setSelectedMethod(prev => prev || 'vnpay');
     } finally {

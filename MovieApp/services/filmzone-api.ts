@@ -78,7 +78,8 @@ class FilmZoneApi {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    customTimeout?: number
   ): Promise<FilmZoneResponse<T>> {
     const url = `${this.config.baseURL}${endpoint}`;
     
@@ -89,7 +90,8 @@ class FilmZoneApi {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+      const timeout = customTimeout || this.config.timeout;
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       const response = await fetch(url, {
         ...config,
@@ -407,9 +409,10 @@ class FilmZoneApi {
 
   /**
    * POST /account/password/change/email/verify
+   * Returns ticket as string in data field
    */
-  async verifyEmailCode(request: VerifyEmailCodeRequest): Promise<FilmZoneResponse<{ ticket: string }>> {
-    return this.request<{ ticket: string }>('/account/password/change/email/verify', {
+  async verifyEmailCode(request: VerifyEmailCodeRequest): Promise<FilmZoneResponse<string>> {
+    return this.request<string>('/account/password/change/email/verify', {
       method: 'POST',
       body: JSON.stringify(request),
     });
@@ -417,12 +420,47 @@ class FilmZoneApi {
 
   /**
    * POST /account/password/change/commit
+   * Uses longer timeout (30s) as password change may take longer
    */
   async commitPasswordChange(request: CommitPasswordChangeRequest): Promise<FilmZoneResponse<any>> {
     return this.request<any>('/account/password/change/commit', {
       method: 'POST',
       body: JSON.stringify(request),
+    }, 30000); // 30 seconds timeout
+  }
+
+  /**
+   * POST /account/password/forgot/email/start
+   * Start forgot password process by sending email
+   */
+  async startForgotPasswordByEmail(request: StartPasswordChangeRequest): Promise<FilmZoneResponse<any>> {
+    return this.request<any>('/account/password/forgot/email/start', {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
+  }
+
+  /**
+   * POST /account/password/forgot/email/verify
+   * Verify OTP code for forgot password
+   * Returns ticket as string in data field
+   */
+  async verifyForgotPasswordByEmail(request: VerifyEmailCodeRequest): Promise<FilmZoneResponse<string>> {
+    return this.request<string>('/account/password/forgot/email/verify', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /**
+   * POST /account/password/forgot/commit
+   * Commit forgot password change using ticket from verify step
+   */
+  async commitForgotPassword(request: CommitPasswordChangeRequest): Promise<FilmZoneResponse<any>> {
+    return this.request<any>('/account/password/forgot/commit', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }, 30000); // 30 seconds timeout
   }
 
   async logout(): Promise<FilmZoneResponse<any>> {

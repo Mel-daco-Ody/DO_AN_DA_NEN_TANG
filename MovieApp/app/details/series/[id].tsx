@@ -129,7 +129,13 @@ export default function SeriesDetailsScreen() {
         const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
         if (commentsOk && commentsResponse.data) {
           const commentsData = commentsResponse.data || [];
-          setComments(commentsData);
+          // Sort comments by createdAt descending (newest first)
+          const sortedComments = [...commentsData].sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA; // Descending order (newest first)
+          });
+          setComments(sortedComments);
           
           // Fetch user data for each unique userID in comments
           // Filter out invalid userIDs (0, null, undefined, negative)
@@ -791,7 +797,13 @@ export default function SeriesDetailsScreen() {
                     const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
                     if (commentsOk && commentsResponse.data) {
                       const commentsData = commentsResponse.data || [];
-                      setComments(commentsData);
+                      // Sort comments by createdAt descending (newest first)
+          const sortedComments = [...commentsData].sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA; // Descending order (newest first)
+          });
+          setComments(sortedComments);
                       
                       // Fetch user data for each unique userID in comments
                       // Filter out invalid userIDs (0, null, undefined, negative)

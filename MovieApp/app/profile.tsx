@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
@@ -31,16 +31,23 @@ export default function ProfileScreen() {
   } = useNotifications();
   const [name, setName] = useState('John Doe');
   const [email, setEmail] = useState('john@example.com');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [avatar, setAvatar] = useState('');
   // Notification states - sử dụng từ context thay vì local state
   const [emailUpdates, setEmailUpdates] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState('starter');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const otpInputRefs = useRef<(TextInput | null)[]>([]);
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [isCommittingPassword, setIsCommittingPassword] = useState(false);
+  const [passwordChangeTicket, setPasswordChangeTicket] = useState<string | null>(null);
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [overviewStats, setOverviewStats] = useState<any>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
@@ -164,12 +171,12 @@ export default function ProfileScreen() {
           }
 
           if (planFromApi) {
-            setCurrentPlan({
+          setCurrentPlan({
               ...(planFromApi as any),
               planID: planFromApi.planID ?? planFromApi.planId ?? planIdNum,
               name: planFromApi.name,
               code: planFromApi.code,
-            });
+          });
           } else {
             // Nếu không gọi được /api/plans/{planID}, coi như không có current plan
             setCurrentPlan(null);
@@ -581,13 +588,133 @@ export default function ProfileScreen() {
   }, [authState.user?.subscription]);
 
   const handleChangePassword = async () => {
-    if (!password.trim() || !newPassword.trim() || !confirmPassword.trim()) {
-      Alert.alert('Error', 'Please fill in all password fields');
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
+    setIsChangingPassword(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      // Start password change process using /account/password/change/email/start
+      const startResponse = await filmzoneApi.startPasswordChangeByEmail({ email: email.trim() });
+      
+      const isOk = (startResponse as any).success === true || (startResponse.errorCode >= 200 && startResponse.errorCode < 300);
+      
+      if (isOk) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Mở modal OTP
+        setShowOtpModal(true);
+        setOtpCode(['', '', '', '', '', '']);
+        // Focus vào ô đầu tiên sau khi modal mở
+        setTimeout(() => {
+          otpInputRefs.current[0]?.focus();
+        }, 100);
+      } else {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Error', startResponse.errorMessage || 'Failed to send verification email');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'An error occurred while sending verification email');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleVerifyOtpCode = async () => {
+    const code = otpCode.join('');
+    if (code.length !== 6) {
+      Alert.alert('Error', 'Please enter the complete 6-digit code');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      // Verify OTP code using /account/password/change/email/verify
+      const verifyResponse = await filmzoneApi.verifyEmailCode({
+        email: email.trim(),
+        code: code,
+      });
+      
+      const isOk = (verifyResponse as any).success === true || (verifyResponse.errorCode >= 200 && verifyResponse.errorCode < 300);
+      
+      if (isOk) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Lưu ticket từ response - data là string trực tiếp (ticket)
+        const ticket = verifyResponse.data || '';
+        if (ticket) {
+          setPasswordChangeTicket(ticket);
+          setShowOtpModal(false);
+          setOtpCode(['', '', '', '', '', '']);
+          setShowPasswordChangeModal(true);
+          setOldPassword('');
+          setNewPassword('');
+          setShowOldPassword(false);
+          setShowNewPassword(false);
+        } else {
+          Alert.alert('Error', 'Failed to get verification ticket');
+        }
+      } else {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'An error occurred while verifying code');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleOtpCodeChange = (index: number, value: string) => {
+    // Chỉ cho phép số
+    const numericValue = value.replace(/[^0-9]/g, '');
+    
+    if (numericValue.length > 1) {
+      // Nếu paste nhiều số (từ autofill), chia vào các ô
+      const digits = numericValue.split('').slice(0, 6);
+      const newCode = [...otpCode];
+      digits.forEach((digit, i) => {
+        if (index + i < 6) {
+          newCode[index + i] = digit;
+        }
+      });
+      setOtpCode(newCode);
+      
+      // Focus vào ô tiếp theo sau ô cuối cùng được điền
+      const nextIndex = Math.min(index + digits.length, 5);
+      if (nextIndex < 6) {
+        otpInputRefs.current[nextIndex]?.focus();
+      } else {
+        // Nếu đã điền đủ 6 số, blur input
+        otpInputRefs.current[5]?.blur();
+      }
+    } else {
+      const newCode = [...otpCode];
+      newCode[index] = numericValue;
+      setOtpCode(newCode);
+      
+      // Tự động focus sang ô tiếp theo nếu đã nhập số
+      if (numericValue && index < 5) {
+        otpInputRefs.current[index + 1]?.focus();
+      }
+    }
+  };
+
+  const handleOtpCodeKeyPress = (index: number, key: string) => {
+    // Xử lý backspace: xóa số hiện tại và focus về ô trước
+    if (key === 'Backspace' && !otpCode[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleCommitPasswordChange = async () => {
+    if (!oldPassword.trim() || !newPassword.trim()) {
+      Alert.alert('Error', 'Please fill in all password fields');
       return;
     }
 
@@ -596,112 +723,69 @@ export default function ProfileScreen() {
       return;
     }
 
-    setIsChangingPassword(true);
+    if (oldPassword.trim() === newPassword.trim()) {
+      Alert.alert('Error', 'New password must be different from old password');
+      return;
+    }
+
+    if (!passwordChangeTicket) {
+      Alert.alert('Error', 'Missing verification ticket. Please start the process again.');
+      return;
+    }
+
+    setIsCommittingPassword(true);
     try {
       await Haptics.selectionAsync();
       
-      // Start password change process
-      const startResponse = await movieAppApi.startPasswordChangeByEmail(email);
+      // Commit password change using /account/password/change/commit
+      const commitResponse = await filmzoneApi.commitPasswordChange({
+        ticket: passwordChangeTicket,
+        oldPassword: oldPassword.trim(),
+        newPassword: newPassword.trim(),
+      });
       
-      if (startResponse.errorCode === 200) {
-        // For now, we'll show an alert. In a real app, you'd navigate to a verification screen
+      const isOk = (commitResponse as any).success === true || (commitResponse.errorCode >= 200 && commitResponse.errorCode < 300);
+      
+      if (isOk) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert(
-          'Verification Required',
-          'Please check your email for a verification code to complete the password change.',
+          'Success',
+          'Password changed successfully!',
           [
             {
-              text: 'Cancel',
-              style: 'cancel'
-            },
-            {
-              text: 'I have the code',
+              text: 'OK',
               onPress: () => {
-                // Navigate to verification screen or show input dialog
-                Alert.prompt(
-                  'Enter Verification Code',
-                  'Please enter the verification code sent to your email:',
-                  async (code) => {
-                    if (code) {
-                      try {
-                        const verifyResponse = await movieAppApi.verifyEmailCode(email, code);
-                        if (verifyResponse.errorCode === 200) {
-                          const commitResponse = await movieAppApi.commitPasswordChange(
-                            verifyResponse.data?.ticket || '',
-                            password,
-                            newPassword
-                          );
-                          
-                          if (commitResponse.errorCode === 200) {
-                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            Alert.alert('Success', 'Password changed successfully');
-                            setPassword('');
-                            setNewPassword('');
-                            setConfirmPassword('');
-                          } else {
-                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                            Alert.alert('Error', commitResponse.errorMessage || 'Failed to change password');
-                          }
-                        } else {
-                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                          Alert.alert('Error', verifyResponse.errorMessage || 'Invalid verification code');
-                        }
-                      } catch (error) {
-                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                        Alert.alert('Error', 'An error occurred during verification');
-                      }
-                    }
-                  }
-                );
+                setShowPasswordChangeModal(false);
+                setOldPassword('');
+                setNewPassword('');
+                setPasswordChangeTicket(null);
+                setShowOldPassword(false);
+                setShowNewPassword(false);
               }
             }
           ]
         );
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', startResponse.errorMessage || 'Failed to start password change');
+        // Hiển thị thông báo lỗi cụ thể
+        let errorMessage = commitResponse.errorMessage || 'Failed to change password';
+        if (commitResponse.errorCode === 408) {
+          errorMessage = 'Request timeout. Please check your internet connection and try again.';
+        }
+        Alert.alert('Error', errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'An error occurred while changing password');
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
-  const handleUpdateProfile = async () => {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
-    }
-
-    setIsUpdatingProfile(true);
-    try {
-      await Haptics.selectionAsync();
-      
-      // Update profile using Mock API
-      const { movieAppApi } = await import('../services/mock-api');
-      const userUpdates = {
-        name: name,
-        email: email,
-        profilePicture: avatar
-      };
-      
-      const response = await movieAppApi.updateUser(userUpdates);
-      
-      if (response.errorCode === 200) {
-        // Update auth context with new user data
-        updateUser(response.data as any);
-      } else {
-        throw new Error(response.errorMessage || 'Failed to update profile');
+      // Xử lý các loại lỗi khác nhau
+      let errorMessage = 'An error occurred while changing password';
+      if (error?.name === 'AbortError' || error?.message?.includes('Aborted')) {
+        errorMessage = 'Request timeout. Please check your internet connection and try again.';
+      } else if (error?.message) {
+        errorMessage = error.message;
       }
-      
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(t('profile.success'), t('profile.profile_updated'));
-    } catch (error) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'An error occurred while updating profile');
+      Alert.alert('Error', errorMessage);
     } finally {
-      setIsUpdatingProfile(false);
+      setIsCommittingPassword(false);
     }
   };
 
@@ -837,6 +921,7 @@ export default function ProfileScreen() {
   };
 
   return (
+    <>
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]} contentInsetAdjustmentBehavior="automatic">
       <ImageBackground source={{ uri: 'https://flixgo.volkovdesign.com/main/img/bg/section__bg.jpg' }} style={styles.hero}>
         <View style={styles.overlay} />
@@ -931,6 +1016,12 @@ export default function ProfileScreen() {
               {/* Films Watched List */}
               <View style={styles.overviewSection}>
                 <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Films Watched</Text>
+                <View style={styles.emptyState}>
+                  <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                    This feature will be added in a later update.
+                  </Text>
+                </View>
+                {/* 
                 {overviewStats?.watchedFilms && overviewStats.watchedFilms.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     {overviewStats.watchedFilms.map((film: any, index: number) => (
@@ -972,6 +1063,7 @@ export default function ProfileScreen() {
                     <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No films watched yet</Text>
                   </View>
                 )}
+                */}
               </View>
 
               {/* Latest Comments */}
@@ -1068,13 +1160,6 @@ export default function ProfileScreen() {
           <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account Information</Text>
             <TextInput
-              placeholder="Name"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={name}
-              onChangeText={setName}
-              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
-            />
-            <TextInput
               placeholder="Email"
               placeholderTextColor={theme.colors.textSecondary}
               value={email}
@@ -1082,46 +1167,13 @@ export default function ProfileScreen() {
               style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
               keyboardType="email-address"
             />
-            <TextInput
-              placeholder="Current Password"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
-              secureTextEntry
-            />
-            <TextInput
-              placeholder="New Password"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
-              secureTextEntry
-            />
-            <TextInput
-              placeholder="Confirm New Password"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              style={[styles.input, { backgroundColor: theme.colors.card, color: theme.colors.text, borderColor: theme.colors.border }]}
-              secureTextEntry
-            />
             <Pressable 
-              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }, isUpdatingProfile && styles.disabledButton]}
-              onPress={handleUpdateProfile}
-              disabled={isUpdatingProfile}
-            >
-              <Text style={styles.primaryBtnText}>
-                {isUpdatingProfile ? t('profile.updating') : t('profile.update_profile')}
-              </Text>
-            </Pressable>
-            <Pressable 
-              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.9 }, isChangingPassword && styles.disabledButton]}
+              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }, isChangingPassword && styles.disabledButton]}
               onPress={handleChangePassword}
               disabled={isChangingPassword}
             >
-              <Text style={styles.secondaryBtnText}>
-                {isChangingPassword ? 'Changing...' : 'Change Password'}
+              <Text style={styles.primaryBtnText}>
+                {isChangingPassword ? 'Sending...' : 'Confirm Change Password'}
               </Text>
             </Pressable>
           </View>
@@ -1506,6 +1558,207 @@ export default function ProfileScreen() {
       {/* Overview Content */}
       
     </ScrollView>
+
+    {/* OTP Verification Modal */}
+    <Modal
+      visible={showOtpModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowOtpModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Nhập mã xác thực</Text>
+          <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+            Vui lòng nhập mã 6 số đã được gửi đến email của bạn
+          </Text>
+          
+          <View style={styles.otpInputContainer}>
+            {otpCode.map((digit, index) => (
+              <TextInput
+                key={index}
+                ref={(ref) => {
+                  otpInputRefs.current[index] = ref;
+                }}
+                style={[
+                  styles.otpInput,
+                  {
+                    backgroundColor: theme.colors.card,
+                    color: theme.colors.text,
+                    borderColor: digit ? theme.colors.primary : theme.colors.border,
+                  },
+                ]}
+                value={digit}
+                onChangeText={(value) => handleOtpCodeChange(index, value)}
+                onKeyPress={({ nativeEvent }) => handleOtpCodeKeyPress(index, nativeEvent.key)}
+                keyboardType="number-pad"
+                maxLength={index === 0 ? 6 : 1}
+                selectTextOnFocus
+                textAlign="center"
+                textContentType={index === 0 ? "oneTimeCode" : "none"}
+                autoComplete={index === 0 ? "sms-otp" : "off"}
+              />
+            ))}
+          </View>
+
+          <View style={styles.modalButtonContainer}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalCancelButton,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+                pressed && { opacity: 0.9 },
+              ]}
+              onPress={() => {
+                setShowOtpModal(false);
+                setOtpCode(['', '', '', '', '', '']);
+              }}
+            >
+              <Text style={[styles.modalCancelButtonText, { color: theme.colors.text }]}>Hủy</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalConfirmButton,
+                { backgroundColor: theme.colors.primary },
+                pressed && { opacity: 0.9 },
+                isVerifyingOtp && styles.disabledButton,
+              ]}
+              onPress={handleVerifyOtpCode}
+              disabled={isVerifyingOtp}
+            >
+              {isVerifyingOtp ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalConfirmButtonText}>Xác nhận</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+
+    {/* Password Change Modal */}
+    <Modal
+      visible={showPasswordChangeModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowPasswordChangeModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Đổi mật khẩu</Text>
+          <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+            Vui lòng nhập mật khẩu cũ và mật khẩu mới
+          </Text>
+          
+          <View style={styles.passwordInputContainer}>
+            <TextInput
+              placeholder="Mật khẩu cũ"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              style={[
+                styles.passwordInput,
+                {
+                  backgroundColor: theme.colors.card,
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+              secureTextEntry={!showOldPassword}
+              autoCapitalize="none"
+            />
+            <Pressable
+              onPress={() => setShowOldPassword(!showOldPassword)}
+              style={({ pressed }) => [
+                styles.passwordToggleButton,
+                pressed && styles.passwordTogglePressed
+              ]}
+              hitSlop={8}
+            >
+              <Image 
+                source={require('../assets/icons/eye-icon.png')}
+                style={[
+                  styles.passwordToggleIcon,
+                  { tintColor: showOldPassword ? theme.colors.primary : theme.colors.textSecondary }
+                ]}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.passwordInputContainer}>
+            <TextInput
+              placeholder="Mật khẩu mới"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              style={[
+                styles.passwordInput,
+                {
+                  backgroundColor: theme.colors.card,
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+              secureTextEntry={!showNewPassword}
+              autoCapitalize="none"
+            />
+            <Pressable
+              onPress={() => setShowNewPassword(!showNewPassword)}
+              style={({ pressed }) => [
+                styles.passwordToggleButton,
+                pressed && styles.passwordTogglePressed
+              ]}
+              hitSlop={8}
+            >
+              <Image 
+                source={require('../assets/icons/eye-icon.png')}
+                style={[
+                  styles.passwordToggleIcon,
+                  { tintColor: showNewPassword ? theme.colors.primary : theme.colors.textSecondary }
+                ]}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.modalButtonContainer}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalCancelButton,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+                pressed && { opacity: 0.9 },
+              ]}
+              onPress={() => {
+                setShowPasswordChangeModal(false);
+                setOldPassword('');
+                setNewPassword('');
+                setPasswordChangeTicket(null);
+                setShowOldPassword(false);
+                setShowNewPassword(false);
+              }}
+            >
+              <Text style={[styles.modalCancelButtonText, { color: theme.colors.text }]}>Hủy</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalConfirmButton,
+                { backgroundColor: theme.colors.primary },
+                pressed && { opacity: 0.9 },
+                isCommittingPassword && styles.disabledButton,
+              ]}
+              onPress={handleCommitPasswordChange}
+              disabled={isCommittingPassword}
+            >
+              {isCommittingPassword ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalConfirmButtonText}>Confirm</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -1742,6 +1995,113 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     padding: 20,
+  },
+  
+  // OTP Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  otpInputContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 24,
+    gap: 12,
+  },
+  otpInput: {
+    width: 50,
+    height: 60,
+    borderRadius: 12,
+    borderWidth: 2,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  passwordInputContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  passwordInput: {
+    flex: 1,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingRight: 50,
+    fontSize: 16,
+  },
+  passwordToggleButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 30,
+    height: 50,
+    zIndex: 1,
+  },
+  passwordTogglePressed: {
+    opacity: 0.7,
+  },
+  passwordToggleIcon: {
+    width: 20,
+    height: 20,
   },
 });
 
