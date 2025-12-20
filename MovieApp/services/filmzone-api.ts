@@ -170,9 +170,9 @@ class FilmZoneApi {
       };
 
     } catch (error: any) {
-      logger.error('API request failed', { endpoint, error });
-      
+      // Don't log AbortError as error since it's expected behavior (timeout)
       if (error.name === 'AbortError') {
+        logger.warn('API request timeout', { endpoint });
         return {
           errorCode: 408,
           errorMessage: 'Request timeout',
@@ -180,6 +180,7 @@ class FilmZoneApi {
         };
       }
 
+      logger.error('API request failed', { endpoint, error });
       return {
         errorCode: 500,
         errorMessage: error.message || 'Network error',
@@ -549,9 +550,10 @@ class FilmZoneApi {
 
   /**
    * GET /api/Movie/GetAllMoviesNewReleaseMainScreen/newReleaseMainScreen
+   * Uses longer timeout (20s) as this endpoint may be slow
    */
   async getNewReleaseMovies(): Promise<FilmZoneResponse<MovieDTO[]>> {
-    return this.request<MovieDTO[]>('/api/Movie/GetAllMoviesNewReleaseMainScreen/newReleaseMainScreen');
+    return this.request<MovieDTO[]>('/api/Movie/GetAllMoviesNewReleaseMainScreen/newReleaseMainScreen', {}, 20000);
   }
 
   /**
@@ -998,9 +1000,10 @@ class FilmZoneApi {
 
   /**
    * GET /api/SavedMovie/GetSavedMoviesByUserID/user/{userId}
+   * Uses longer timeout (20s) as this endpoint may be slow
    */
   async getSavedMoviesByUserID(userId: number): Promise<FilmZoneResponse<SavedMovieDTO[]>> {
-    return this.request<SavedMovieDTO[]>(`/api/SavedMovie/GetSavedMoviesByUserID/user/${userId}`);
+    return this.request<SavedMovieDTO[]>(`/api/SavedMovie/GetSavedMoviesByUserID/user/${userId}`, {}, 20000);
   }
 
   /**
@@ -1321,9 +1324,10 @@ class FilmZoneApi {
 
   /**
    * GET /movie/Tag/GetAllTags/getALlTags
+   * Uses longer timeout (20s) as this endpoint may be slow
    */
   async getAllTags(): Promise<FilmZoneResponse<TagDTO[]>> {
-    return this.request<TagDTO[]>('/movie/Tag/GetAllTags/getALlTags');
+    return this.request<TagDTO[]>('/movie/Tag/GetAllTags/getALlTags', {}, 20000);
   }
 
   /**
@@ -1332,6 +1336,27 @@ class FilmZoneApi {
    */
   async getTagsByMovie(movieId: number): Promise<FilmZoneResponse<TagDTO[]>> {
     return this.request<TagDTO[]>(`/movie/MovieTag/GetTagsByMovie/${movieId}`);
+  }
+
+  /**
+   * GET /movie/MovieTag/GetMoviesByTag/{tagID}
+   * Lấy danh sách movies theo tagID (genre)
+   */
+  async getMoviesByTag(tagId: number): Promise<FilmZoneResponse<MovieDTO[]>> {
+    return this.request<MovieDTO[]>(`/movie/MovieTag/GetMoviesByTag/${tagId}`);
+  }
+
+  /**
+   * GET /movie/MovieTag/GetMoviesByTagIDs/getMovieByTagID
+   * Lấy danh sách movies theo nhiều tagIDs (genres)
+   * Query parameter: tagID (array of integers)
+   */
+  async getMoviesByTagIDs(tagIds: number[]): Promise<FilmZoneResponse<MovieDTO[]>> {
+    // Build query string with array parameters
+    // Format: ?tagID=1&tagID=2&tagID=3
+    const queryParams = tagIds.map(id => `tagID=${id}`).join('&');
+    const endpoint = `/movie/MovieTag/GetMoviesByTagIDs/getMovieByTagID${queryParams ? `?${queryParams}` : ''}`;
+    return this.request<MovieDTO[]>(endpoint);
   }
 
   // ==================== PLAN & PRICE APIs ====================
@@ -1366,9 +1391,10 @@ class FilmZoneApi {
 
   /**
    * GET /movie/Region/GetAllRegions/getAll
+   * Uses longer timeout (20s) as this endpoint may be slow
    */
   async getAllRegions(): Promise<FilmZoneResponse<RegionDTO[]>> {
-    return this.request<RegionDTO[]>('/movie/Region/GetAllRegions/getAll');
+    return this.request<RegionDTO[]>('/movie/Region/GetAllRegions/getAll', {}, 20000);
   }
 
   /**
@@ -1402,6 +1428,14 @@ class FilmZoneApi {
    */
   async getPersonsByMovie(movieId: number): Promise<FilmZoneResponse<PersonDTO[]>> {
     return this.request<PersonDTO[]>(`/movie/MoviePerson/GetPersonsByMovie/${movieId}`);
+  }
+
+  /**
+   * GET /movie/MoviePerson/GetMoviesByPerson/{personID}
+   * Lấy danh sách movies theo personID từ backend
+   */
+  async getMoviesByPerson(personId: number): Promise<FilmZoneResponse<MovieDTO[]>> {
+    return this.request<MovieDTO[]>(`/movie/MoviePerson/GetMoviesByPerson/${personId}`);
   }
 
   // ==================== REVIEW APIs (Legacy - not in Swagger) ====================

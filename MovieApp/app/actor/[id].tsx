@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, Pressable, Dimensions, FlatList } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Image, Pressable, Dimensions, FlatList, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import ImageWithPlaceholder from '../../components/ImageWithPlaceholder';
+import filmzoneApi from '../../services/filmzone-api';
 
 const { width } = Dimensions.get('window');
 
@@ -47,14 +48,39 @@ export default function ActorScreen() {
   const [activeTab, setActiveTab] = useState('filmography');
   const [actor, setActor] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [movies, setMovies] = useState<any[]>([]);
+  const [moviesLoading, setMoviesLoading] = useState(false);
 
   useEffect(() => {
     const loadActor = async () => {
+      if (!id) return;
+      setIsLoading(true);
       try {
-        const { movieAppApi } = await import('../../services/mock-api');
-        const response = await movieAppApi.getActorById(parseInt(id as string));
-        if (response.errorCode === 200) {
-          setActor(response.data);
+        const personId = parseInt(id as string);
+        const response = await filmzoneApi.getPersonById(personId);
+        const isOk = response.errorCode >= 200 && response.errorCode < 300;
+        
+        if (isOk && response.data) {
+          // Transform PersonDTO to actor format
+          const person = response.data;
+          setActor({
+            id: person.personID?.toString(),
+            fullName: person.fullName || 'Unknown',
+            avatar: person.avatar || '',
+            career: person.career || person.role || 'Actor',
+            height: '', // Not available in API
+            birthDate: '', // Not available in API
+            birthPlace: '', // Not available in API
+            age: '', // Not available in API
+            zodiac: '', // Not available in API
+            genres: [], // Not available in API
+            totalMovies: 0, // Will be updated when movies load
+            firstMovie: '', // Not available in API
+            lastMovie: '', // Not available in API
+            bestMovie: '', // Not available in API
+            filmography: [], // Will be loaded separately
+            photos: [], // Not available in API
+          });
         } else {
           // Fallback to mock data if API fails
           setActor(actorData[id as keyof typeof actorData] || actorData['1']);
@@ -71,28 +97,86 @@ export default function ActorScreen() {
     loadActor();
   }, [id]);
 
-  const renderFilmographyItem = ({ item }: { item: any }) => (
-    <Pressable 
-      style={styles.filmItem}
-      onPress={() => router.push(`/details/movie/${item.id}`)}
-    >
-      <View style={styles.filmCover}>
-        <ImageWithPlaceholder source={{ uri: item.image }} style={styles.filmImage} showRedBorder={false} />
-        <View style={styles.playIcon}>
-          <Ionicons name="play" size={20} color="#fff" />
+  // Load movies by person ID
+  useEffect(() => {
+    const loadMovies = async () => {
+      if (!id) return;
+      setMoviesLoading(true);
+      try {
+        const personId = parseInt(id as string);
+        const response = await filmzoneApi.getMoviesByPerson(personId);
+        const isOk = response.errorCode >= 200 && response.errorCode < 300;
+        if (isOk && response.data) {
+          // Transform MovieDTO to filmography format
+          const transformedMovies = response.data.map((movie: any) => ({
+            id: movie.movieID?.toString() || movie.id?.toString(),
+            title: movie.title,
+            year: movie.year || movie.releaseDate?.substring(0, 4),
+            rating: movie.popularity?.toFixed(1) || '0.0',
+            genres: movie.tags?.map((tag: any) => tag.tagName) || [],
+            image: movie.image,
+            isSeries: movie.movieType === 'series' || movie.isSeries,
+          }));
+          setMovies(transformedMovies);
+          
+          // Update actor totalMovies count
+          setActor((prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              totalMovies: transformedMovies.length,
+            };
+          });
+        } else {
+          setMovies([]);
+        }
+      } catch (error) {
+        console.error('Error loading movies:', error);
+        setMovies([]);
+      } finally {
+        setMoviesLoading(false);
+      }
+    };
+
+    if (activeTab === 'filmography') {
+      loadMovies();
+    }
+  }, [id, activeTab]);
+
+  const renderFilmographyItem = ({ item }: { item: any }) => {
+    const pathname = item.isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+    return (
+      <Pressable 
+        style={styles.filmItem}
+        onPress={() => {
+          router.push({
+            pathname,
+            params: {
+              id: item.id,
+              title: item.title,
+              cover: item.image,
+              categories: Array.isArray(item.genres) ? item.genres.join(' • ') : '',
+              rating: item.rating,
+              year: item.year || '',
+            },
+          } as any);
+        }}
+      >
+        <View style={styles.filmCover}>
+          <ImageWithPlaceholder source={{ uri: item.image }} style={styles.filmImage} showRedBorder={false} />
         </View>
-      </View>
-      <View style={styles.filmContent}>
-        <Text style={styles.filmTitle}>{item.title}</Text>
-        <View style={styles.filmGenres}>
-          {(item.genres || []).map((genre: string, index: number) => (
-            <Text key={index} style={styles.filmGenre}>{genre}</Text>
-          ))}
+        <View style={styles.filmContent}>
+          <Text style={styles.filmTitle}>{item.title}</Text>
+          <View style={styles.filmGenres}>
+            {(item.genres || []).map((genre: string, index: number) => (
+              <Text key={index} style={styles.filmGenre}>{genre}</Text>
+            ))}
+          </View>
+          <Text style={styles.filmRating}>{item.rating}</Text>
         </View>
-        <Text style={styles.filmRating}>{item.rating}</Text>
-      </View>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
 
   const renderPhotoItem = ({ item }: { item: string }) => (
     <Pressable style={styles.photoItem}>
@@ -156,12 +240,14 @@ export default function ActorScreen() {
       {/* Actor Details */}
       <View style={styles.detailsSection}>
         <View style={styles.actorCard}>
-          <ImageWithPlaceholder source={{ uri: actor.avatar }} style={styles.actorImage} showRedBorder={false} />
-          <View style={styles.actorInfo}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Career:</Text>
-              <Text style={styles.infoValue}>{actor.career}</Text>
+          {actor.avatar ? (
+            <ImageWithPlaceholder source={{ uri: actor.avatar }} style={styles.actorImage} showRedBorder={false} />
+          ) : (
+            <View style={[styles.actorImage, styles.actorImagePlaceholder]}>
+              <Ionicons name="person" size={40} color="#8e8e93" />
             </View>
+          )}
+          <View style={styles.actorInfo}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Height:</Text>
               <Text style={styles.infoValue}>{actor.height}</Text>
@@ -169,10 +255,6 @@ export default function ActorScreen() {
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Date of birth:</Text>
               <Text style={styles.infoValue}>{actor.birthDate}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Place of birth:</Text>
-              <Text style={styles.infoValue}>{actor.birthPlace}</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Age:</Text>
@@ -192,19 +274,7 @@ export default function ActorScreen() {
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Total number of movies:</Text>
-              <Text style={styles.infoValue}>{actor.totalMovies}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>First movie:</Text>
-              <Text style={styles.infoValue}>{actor.firstMovie}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Last movie:</Text>
-              <Text style={styles.infoValue}>{actor.lastMovie}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Best movie:</Text>
-              <Text style={styles.infoValue}>{actor.bestMovie}</Text>
+              <Text style={styles.infoValue}> {actor.totalMovies}</Text>
             </View>
           </View>
         </View>
@@ -234,14 +304,27 @@ export default function ActorScreen() {
 
         {/* Tab Content */}
         {activeTab === 'filmography' ? (
-          <FlatList
-            data={actor.filmography || []}
-            renderItem={renderFilmographyItem}
-            keyExtractor={(item) => item.id}
-            numColumns={2}
-            scrollEnabled={false}
-            contentContainerStyle={styles.filmographyGrid}
-          />
+          <>
+            {moviesLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#e50914" />
+                <Text style={styles.loadingText}>Đang tải phim...</Text>
+              </View>
+            ) : movies.length > 0 ? (
+              <FlatList
+                data={movies}
+                renderItem={renderFilmographyItem}
+                keyExtractor={(item) => item.id}
+                numColumns={2}
+                scrollEnabled={false}
+                contentContainerStyle={styles.filmographyGrid}
+              />
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Không có phim nào</Text>
+              </View>
+            )}
+          </>
         ) : (
           <FlatList
             data={actor.photos || []}
@@ -276,6 +359,11 @@ const styles = StyleSheet.create({
   detailsSection: { padding: 16 },
   actorCard: { backgroundColor: '#121219', borderRadius: 12, padding: 16, flexDirection: 'row' },
   actorImage: { width: 120, height: 160, borderRadius: 8, marginRight: 16 },
+  actorImagePlaceholder: { 
+    backgroundColor: '#2b2b31', 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
   actorInfo: { flex: 1 },
   infoRow: { flexDirection: 'row', marginBottom: 8, flexWrap: 'wrap' },
   infoLabel: { color: '#c7c7c7', fontSize: 14, fontWeight: '600', minWidth: 120 },
@@ -297,7 +385,6 @@ const styles = StyleSheet.create({
   filmItem: { width: (width - 48) / 2, marginRight: 16, marginBottom: 20 },
   filmCover: { position: 'relative', borderRadius: 8, overflow: 'hidden', marginBottom: 8 },
   filmImage: { width: '100%', height: 200 },
-  playIcon: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -10 }, { translateY: -10 }], width: 20, height: 20, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   filmContent: {},
   filmTitle: { color: '#fff', fontSize: 14, fontWeight: '600', marginBottom: 4 },
   filmGenres: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
@@ -315,10 +402,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    flexDirection: 'row',
+    gap: 8,
   },
   loadingText: {
-    color: '#fff',
-    fontSize: 16,
+    color: '#8e8e93',
+    fontSize: 14,
     fontWeight: '500',
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#8e8e93',
+    fontSize: 14,
   },
 });

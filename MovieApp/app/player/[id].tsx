@@ -1090,13 +1090,15 @@ const styles = StyleSheet.create({
   },
   subtitleMenuContainer: {
     position: 'absolute',
-    left: -100,
-    top: -10,
+    right: 0,
+    bottom: 50,
     width: 150,
     maxHeight: 200,
     backgroundColor: 'rgba(0,0,0,0.9)',
     borderRadius: 8,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e50914',
   },
   subtitleMenu: {
     maxHeight: 180,

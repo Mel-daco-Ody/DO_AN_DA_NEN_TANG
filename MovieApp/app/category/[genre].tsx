@@ -8,7 +8,7 @@ import filmzoneApi from '../../services/filmzone-api';
 
 
 export default function CategoryScreen() {
-  const { genre } = useLocalSearchParams();
+  const { genre, tagID } = useLocalSearchParams();
   const width = Dimensions.get('window').width;
   const itemWidth = (width - 48) / 2; // 2 columns with margins
   const [items, setItems] = useState<any[]>([]);
@@ -22,34 +22,48 @@ export default function CategoryScreen() {
       setError(null);
 
       try {
-        // 1. Lấy toàn bộ tags để map tagName -> tagID
-        const tagsResponse = await filmzoneApi.getAllTags();
-        const isTagsOk = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
-
         let tagId: number | undefined;
-        if (isTagsOk) {
-          const matchedTag = tagsResponse.data!.find(
-            (t: any) => t.tagName.toLowerCase() === (genre as string).toLowerCase()
-          );
-          tagId = matchedTag?.tagID;
+
+        // 1. Ưu tiên sử dụng tagID từ params (nếu có)
+        if (tagID) {
+          tagId = Number(tagID);
+        } else {
+          // 2. Nếu không có tagID, lấy toàn bộ tags để map tagName -> tagID
+          const tagsResponse = await filmzoneApi.getAllTags();
+          const isTagsOk = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
+
+          if (isTagsOk) {
+            const matchedTag = tagsResponse.data!.find(
+              (t: any) => t.tagName.toLowerCase() === (genre as string).toLowerCase()
+            );
+            tagId = matchedTag?.tagID;
+          }
         }
 
-        // 2. Nếu tìm được tagId thì search theo tagIds, nếu không thì search theo text genre
-        let searchResponse;
+        // 3. Nếu có tagId, dùng API GetMoviesByTagIDs, nếu không thì fallback về search
         if (tagId) {
-          searchResponse = await filmzoneApi.searchMovies('', { tagIds: [tagId] });
-        } else {
-          searchResponse = await filmzoneApi.searchMovies(genre as string);
-        }
+          const moviesResponse = await filmzoneApi.getMoviesByTagIDs([tagId]);
+          const isMoviesOk =
+            moviesResponse.errorCode >= 200 && moviesResponse.errorCode < 300 && moviesResponse.data;
 
-        const isSearchOk =
-          searchResponse.errorCode >= 200 && searchResponse.errorCode < 300 && searchResponse.data;
-
-        if (!isSearchOk) {
-          setItems([]);
-          setError('Không thể tải danh sách phim.');
+          if (!isMoviesOk) {
+            setItems([]);
+            setError('Không thể tải danh sách phim.');
+          } else {
+            setItems(moviesResponse.data || []);
+          }
         } else {
-          setItems(searchResponse.data || []);
+          // Fallback: search theo text genre nếu không tìm được tagID
+          const searchResponse = await filmzoneApi.searchMovies(genre as string);
+          const isSearchOk =
+            searchResponse.errorCode >= 200 && searchResponse.errorCode < 300 && searchResponse.data;
+
+          if (!isSearchOk) {
+            setItems([]);
+            setError('Không thể tải danh sách phim.');
+          } else {
+            setItems(searchResponse.data || []);
+          }
         }
       } catch (e) {
         setError('Đã xảy ra lỗi khi tải dữ liệu.');
@@ -60,39 +74,48 @@ export default function CategoryScreen() {
     };
 
     loadCategoryMovies();
-  }, [genre]);
+  }, [genre, tagID]);
 
-  const renderItem = ({ item }: { item: any }) => (
-    <Pressable 
-      style={[styles.itemCard, { width: itemWidth }]} 
-      onPress={() => {
-        const isSeries = item.isSeries;
-        const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+  const renderItem = ({ item }: { item: any }) => {
+    // Handle both MovieDTO format (from getMoviesByTag) and SearchResultDTO format (from searchMovies)
+    const movieId = item.movieID?.toString() || item.id?.toString();
+    const coverImage = item.image || item.cover || '';
+    const isSeries = item.movieType === 'series' || item.isSeries;
+    const pathname = isSeries ? '/details/series/[id]' : '/details/movie/[id]';
+    const categories = item.tags?.map((tag: any) => tag.tagName).join(' • ') || 
+                      (Array.isArray(item.categories) ? item.categories.join(' • ') : '');
+    const rating = item.popularity?.toFixed(1) || item.rating || '0.0';
+    const year = item.year || item.releaseDate?.substring(0, 4) || '';
 
-        router.push({
-          pathname,
-          params: {
-            id: item.id,
-            title: item.title,
-            cover: item.cover,
-            categories: Array.isArray(item.categories) ? item.categories.join(' • ') : '',
-            rating: item.rating,
-            year: item.year || '',
-            country: item.studio || '',
-          },
-        } as any);
-      }}
-    >
-      <ImageWithPlaceholder 
-        source={{ uri: item.cover }} 
-        style={styles.itemImage} 
-        showRedBorder={false}
-      />
-      <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
-      <Text style={styles.itemRating}>{item.rating}</Text>
-      <Text style={styles.itemYear}>{item.year}</Text>
-    </Pressable>
-  );
+    return (
+      <Pressable 
+        style={[styles.itemCard, { width: itemWidth }]} 
+        onPress={() => {
+          router.push({
+            pathname,
+            params: {
+              id: movieId,
+              title: item.title,
+              cover: coverImage,
+              categories: categories,
+              rating: rating,
+              year: year,
+              country: item.region?.regionName || item.studio || '',
+            },
+          } as any);
+        }}
+      >
+        <ImageWithPlaceholder 
+          source={{ uri: coverImage }} 
+          style={styles.itemImage} 
+          showRedBorder={false}
+        />
+        <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.itemRating}>{rating}</Text>
+        <Text style={styles.itemYear}>{year}</Text>
+      </Pressable>
+    );
+  };
 
   return (
     <ScrollView style={styles.container} contentInsetAdjustmentBehavior="automatic">
@@ -128,7 +151,7 @@ export default function CategoryScreen() {
         <FlatList
           data={items}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.movieID?.toString() || item.id?.toString() || Math.random().toString()}
           numColumns={2}
           contentContainerStyle={styles.gridContainer}
           columnWrapperStyle={styles.row}

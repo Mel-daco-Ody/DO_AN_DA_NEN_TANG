@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, Animated, FlatList, ScrollView, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, Animated, FlatList, ScrollView, Alert, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -18,6 +18,10 @@ export default function Header() {
   const { authState } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const { showWarning } = useToast();
+  const { width } = useWindowDimensions();
+  
+  // Hide search text when screen width is less than 600px
+  const showSearchText = width >= 100;
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -211,15 +215,23 @@ export default function Header() {
         <View style={styles.flexGrow} />
 
         {/* Search */}
-        <Pressable style={styles.searchBox} onPress={handleSearchPress}>
-          <TextInput 
-            placeholder={t('header.search')} 
-            placeholderTextColor="#8e8e93" 
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            editable={false}
-          />
+        <Pressable style={[styles.searchBox, !showSearchText && styles.searchBoxIconOnly]} onPress={handleSearchPress}>
+          {showSearchText ? (
+            <TextInput 
+              placeholder={t('header.search')} 
+              placeholderTextColor="#8e8e93" 
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              editable={false}
+            />
+          ) : (
+            <Image
+              source={require('../assets/images/search.png')}
+              style={styles.searchIcon}
+              contentFit="contain"
+            />
+          )}
         </Pressable>
 
         {/* Language */}
@@ -235,7 +247,11 @@ export default function Header() {
             router.push('/moviebox');
           }}
         >
-          <Text style={styles.movieBoxIcon}>📦</Text>
+          <Image 
+            source={require('../assets/images/box.png')} 
+            style={styles.movieBoxIcon}
+            contentFit="contain"
+          />
         </Pressable>
 
         {/* Avatar based on auth status - Signin button is now floating */}
@@ -615,10 +631,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
     flexShrink: 0, // Không thu nhỏ button
   },
-  burger: { width: 16, height: 2, backgroundColor: '#fff', marginVertical: 1 },
+  burger: { width: 20, height: 2, backgroundColor: '#fff', marginVertical: 1 },
   flexGrow: { 
-    flex: 1,
-    minWidth: 8, // Minimum spacing
+    flex: 0,
+    minWidth: 0, // Minimum spacing
   },
   searchBox: { 
     flexDirection: 'row', 
@@ -630,11 +646,22 @@ const styles = StyleSheet.create({
     marginRight: 8,
     flex: 2, // Cho phép search box co giãn
     minWidth: 60, // Giảm minWidth để responsive tốt hơn
-    maxWidth: 250, // Giới hạn width tối đa
+    maxWidth: 500, // Giới hạn width tối đa
     borderWidth: 1, 
     borderColor: '#e50914',
   },
+  searchBoxIconOnly: {
+    flex: 0,
+    minWidth: 34,
+    maxWidth: 34,
+    paddingHorizontal: 0,
+    justifyContent: 'center',
+  },
   searchInput: { color: '#fff', flex: 1, fontSize: 12 },
+  searchIcon: {
+    width: 20,
+    height: 20,
+  },
   langBtn: { 
     backgroundColor: '#1c1c23', 
     height: 34, 
@@ -657,7 +684,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     flexShrink: 0, // Không thu nhỏ
   },
-  movieBoxIcon: { fontSize: 16 },
+  movieBoxIcon: { width: 20, height: 26 },
   movieBoxBadge: {
     position: 'absolute',
     top: -4,

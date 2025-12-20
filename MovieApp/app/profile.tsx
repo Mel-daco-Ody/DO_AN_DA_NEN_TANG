@@ -1766,7 +1766,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#2b2b31' },
   hero: { height: 180, justifyContent: 'flex-end' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  backBtn: { position: 'absolute', top: 12, left: 12, width: 36, height: 36, borderWidth: 2, borderColor: '#e50914', borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  backBtn: { position: 'absolute', top: 30, left: 12, width: 36, height: 36, borderWidth: 2, borderColor: '#e50914', borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
   backArrow: { color: '#e50914', fontSize: 20, fontWeight: '800' },
   headerRow: { flexDirection: 'row', alignItems: 'center', padding: 12 },
   avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#14141b' },

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, View, ScrollView, Alert, Text, Pressable, Modal, Dimensions, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +56,23 @@ export default function HomeScreen() {
   const [currentPlan, setCurrentPlan] = useState<any | null>(null);
   const [plansLoading, setPlansLoading] = useState(false);
   const [fetchedSubscription, setFetchedSubscription] = useState<any | null>(null);
+  const [genres, setGenres] = useState<any[]>([]);
+  const [genresExpanded, setGenresExpanded] = useState(false);
+
+  // Load genres from API
+  useEffect(() => {
+    const loadGenres = async () => {
+      try {
+        const tagsResponse = await filmzoneApi.getAllTags();
+        if (tagsResponse.errorCode === 200 && tagsResponse.data) {
+          setGenres(tagsResponse.data);
+        }
+      } catch (error) {
+        logger.warn('Failed to load genres', error);
+      }
+    };
+    loadGenres();
+  }, []);
 
   // Memoized tabs
   const tabs: TabItem[] = React.useMemo(
@@ -394,19 +412,98 @@ export default function HomeScreen() {
           onSlidePress={handleHeroSlidePress} 
         />
 
-        {/* Subscription Status Banner */}
-        {authState.isAuthenticated && showWelcomeBanner && (
-          <View style={styles.subscriptionBanner}>
-            <Text style={styles.subscriptionBannerText}>
-              Welcome to FilmZone!
-            </Text>
-                  <Pressable
-              style={styles.closeButton}
-              onPress={() => setShowWelcomeBanner(false)}
-            >
-              <Ionicons name="close" size={20} color="#fff" />
-                  </Pressable>
+        {/* Genres List */}
+        {genres.length > 0 && (
+          <View style={styles.genresContainer}>
+            <View style={styles.genresRow}>
+              {genresExpanded ? (
+                <View style={styles.genresGrid}>
+                  {genres.map((genre: any) => (
+                    <Pressable
+                      key={genre.tagID || genre.tagId || genre.tagName}
+                      style={({ pressed }) => [
+                        styles.genreChip,
+                        pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 }
+                      ]}
+                      onPress={async () => {
+                        try {
+                          await Haptics.selectionAsync();
+                          // Navigate to genre page with tagID
+                          const tagId = genre.tagID || genre.tagId;
+                          if (tagId) {
+                            router.push({
+                              pathname: '/category/[genre]',
+                              params: { 
+                                genre: genre.tagName,
+                                tagID: tagId.toString()
+                              }
+                            } as any);
+                          }
+                        } catch {}
+                      }}
+                    >
+                      <Text style={styles.genreChipText}>{genre.tagName}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.genresScrollContent}
+                  style={styles.genresScrollView}
+                >
+                  {genres.slice(0, 8).map((genre: any) => (
+                    <Pressable
+                      key={genre.tagID || genre.tagId || genre.tagName}
+                      style={({ pressed }) => [
+                        styles.genreChip,
+                        pressed && { transform: [{ scale: 0.95 }], opacity: 0.8 }
+                      ]}
+                      onPress={async () => {
+                        try {
+                          await Haptics.selectionAsync();
+                          // Navigate to genre page with tagID
+                          const tagId = genre.tagID || genre.tagId;
+                          if (tagId) {
+                            router.push({
+                              pathname: '/category/[genre]',
+                              params: { 
+                                genre: genre.tagName,
+                                tagID: tagId.toString()
+                              }
+                            } as any);
+                          }
+                        } catch {}
+                      }}
+                    >
+                      <Text style={styles.genreChipText}>{genre.tagName}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+              {genres.length > 8 && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.genresExpandButton,
+                    pressed && { opacity: 0.8 }
+                  ]}
+                  onPress={async () => {
+                    try {
+                      await Haptics.selectionAsync();
+                      setGenresExpanded(!genresExpanded);
+                    } catch {}
+                  }}
+                >
+                  <Image
+                    source={require('../../assets/images/open.png')}
+                    style={styles.genresExpandIcon}
+                    contentFit="contain"
+                  />
+                </Pressable>
+              )}
             </View>
+          </View>
         )}
 
         {/* Recently Updated Section */}
@@ -1001,11 +1098,10 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
 
-  partnersRow: { paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20 },
+  partnersRow: { paddingHorizontal: 16, flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20, justifyContent: 'space-between' },
   partnerBox: { 
-    width: (Dimensions.get('window').width - 16*2 - 10*3)/4, 
+    width: (Dimensions.get('window').width - 16*2 - 10)/2, 
     height: 60, 
-    marginRight: 10, 
     marginBottom: 10, 
     backgroundColor: '#2b2b31', 
     borderRadius: 8, 
@@ -1017,18 +1113,56 @@ const styles = StyleSheet.create({
   partnerText: { color: '#8e8e93', fontSize: 12, fontWeight: '600' },
   
   
-  // Subscription banner styles
-  subscriptionBanner: { 
-    backgroundColor: '#e50914', 
-    padding: 16, 
-    borderRadius: 12, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between' 
+  // Genres styles
+  genresContainer: {
+    marginTop: 10,
+    marginBottom: 0,
+    paddingHorizontal: 16,
   },
-  subscriptionBannerText: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1, marginRight: 12 },
-  subscriptionBannerBtn: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  subscriptionBannerBtnText: { color: '#e50914', fontSize: 12, fontWeight: '700' },
+  genresRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  genresScrollView: {
+    flex: 1,
+  },
+  genresScrollContent: {
+    paddingRight: 8,
+  },
+  genresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  genreChip: {
+    backgroundColor: '#2b2b31',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgb(255, 0, 0)',
+  },
+  genreChipText: {
+    color: 'rgb(245, 18, 18)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  genresExpandButton: {
+    width: 50,
+    height: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: 'rgb(255, 0, 0)',
+  },
+  genresExpandIcon: {
+    width: 24,
+    height: 24,
+  },
   closeButton: {
     width: 32,
     height: 32,

@@ -110,7 +110,10 @@ const styles = StyleSheet.create({
   heroSlide: { 
     width: Dimensions.get('window').width, 
     height: 200, 
-    borderRadius: 12, 
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     overflow: 'hidden' 
   },
   heroBg: { 
