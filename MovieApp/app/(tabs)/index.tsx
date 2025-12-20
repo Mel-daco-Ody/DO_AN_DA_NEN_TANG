@@ -716,7 +716,7 @@ function Plan({ title, price, features, cta, highlight, onPress, t }: { title: s
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#2b2b31' },
   scrollView: { flex: 1 },
-  pagePad: { paddingTop: 70 }, // Updated: 100px (top) + 60px (header height) = 160px
+  pagePad: { paddingTop: 50 }, // Updated: 100px (top) + 60px (header height) = 160px
   
   // Loading and error states
   loadingText: { 
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
 
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginHorizontal: 16, marginBottom: 15 },
   sectionText: { color: '#c7c7cc', marginHorizontal: 16, marginBottom: 10, fontSize: 12 },
-  sectionContainer: { marginBottom: 20 },
+  sectionContainer: { marginBottom: 0 },
   
   // Featured Movies Styles
   featuredCard: { 
@@ -1115,7 +1115,7 @@ const styles = StyleSheet.create({
   
   // Genres styles
   genresContainer: {
-    marginTop: 10,
+    marginTop: 20,
     marginBottom: 0,
     paddingHorizontal: 16,
   },
@@ -1145,7 +1145,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgb(255, 0, 0)',
   },
   genreChipText: {
-    color: 'rgb(245, 18, 18)',
+    color: 'rgb(252, 252, 252)',
     fontSize: 14,
     fontWeight: '600',
   },
