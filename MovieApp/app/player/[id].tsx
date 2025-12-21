@@ -33,6 +33,12 @@ export default function VideoPlayerScreen() {
   const [waveAnimation1] = useState(new Animated.Value(0));
   const [waveAnimation2] = useState(new Animated.Value(0));
   const [waveAnimation3] = useState(new Animated.Value(0));
+  const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
+  const waveAnimationRefs = useRef<Animated.CompositeAnimation[]>([]);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [isInitialBuffering, setIsInitialBuffering] = useState(false);
+  const [loadingBubbleRotation] = useState(new Animated.Value(0));
+  const loadingBubbleAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const [isToggling, setIsToggling] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
@@ -104,6 +110,9 @@ export default function VideoPlayerScreen() {
         setIsLoadingVideo(true);
         setVideoError(false);
         setLoadingElapsedSeconds(0);
+        setHasPlayedOnce(false); // Reset wave animation for new video
+        setIsBuffering(false); // Reset buffering state for new video
+        setIsInitialBuffering(false); // Reset initial buffering state for new video
         
         // Start interval to update loading time every 10 seconds
         loadingIntervalRef.current = setInterval(() => {
@@ -305,17 +314,27 @@ export default function VideoPlayerScreen() {
 
   useEffect(() => {
     // Hide controls after 3 seconds when they are shown
-    if (showControls) {
+    // But keep controls visible when buffering (loading bubbles are showing)
+    if (showControls && !isBuffering) {
       const timer = setTimeout(() => {
         setShowControls(false);
       }, 3000);
 
       return () => clearTimeout(timer);
     }
-  }, [showControls]);
+  }, [showControls, isBuffering]);
 
-  // Wave animation effect
+  // Wave animation effect - only run if video hasn't been played yet
   useEffect(() => {
+    if (hasPlayedOnce) {
+      // Stop all animations if video has been played
+      waveAnimationRefs.current.forEach(anim => {
+        anim.stop();
+      });
+      waveAnimationRefs.current = [];
+      return;
+    }
+
     const createWaveAnimation = (animValue: Animated.Value, delay: number) => {
       return Animated.loop(
         Animated.sequence([
@@ -336,10 +355,53 @@ export default function VideoPlayerScreen() {
     };
 
     // Start all three wave animations with different delays
-    createWaveAnimation(waveAnimation1, 0).start();
-    createWaveAnimation(waveAnimation2, 700).start();
-    createWaveAnimation(waveAnimation3, 1400).start();
-  }, [waveAnimation1, waveAnimation2, waveAnimation3]);
+    const anim1 = createWaveAnimation(waveAnimation1, 0);
+    const anim2 = createWaveAnimation(waveAnimation2, 700);
+    const anim3 = createWaveAnimation(waveAnimation3, 1400);
+    
+    anim1.start();
+    anim2.start();
+    anim3.start();
+    
+    // Store animation references so we can stop them later
+    waveAnimationRefs.current = [anim1, anim2, anim3];
+
+    // Cleanup function to stop animations
+    return () => {
+      anim1.stop();
+      anim2.stop();
+      anim3.stop();
+    };
+  }, [waveAnimation1, waveAnimation2, waveAnimation3, hasPlayedOnce]);
+
+  // Loading bubble rotation animation - only during initial buffering (first play)
+  useEffect(() => {
+    if (isInitialBuffering) {
+      // Start rotation animation
+      const rotationAnimation = Animated.loop(
+        Animated.timing(loadingBubbleRotation, {
+          toValue: 3,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      );
+      rotationAnimation.start();
+      loadingBubbleAnimationRef.current = rotationAnimation;
+    } else {
+      // Stop rotation animation
+      if (loadingBubbleAnimationRef.current) {
+        loadingBubbleAnimationRef.current.stop();
+        loadingBubbleAnimationRef.current = null;
+      }
+    }
+
+    return () => {
+      if (loadingBubbleAnimationRef.current) {
+        loadingBubbleAnimationRef.current.stop();
+        loadingBubbleAnimationRef.current = null;
+      }
+    };
+  }, [isInitialBuffering, loadingBubbleRotation]);
 
   const togglePlayPause = async () => {
     if (isToggling) return; // Prevent multiple rapid calls
@@ -352,6 +414,14 @@ export default function VideoPlayerScreen() {
       if (isPlaying) {
         await videoRef.current?.pauseAsync();
       } else {
+        // Mark as played for the first time when starting playback
+        if (!hasPlayedOnce) {
+          setHasPlayedOnce(true);
+          // Set initial buffering to true immediately when starting playback for the first time
+          // This ensures loading bubbles show right away, especially on first play
+          setIsInitialBuffering(true);
+          setIsBuffering(true);
+        }
         await videoRef.current?.playAsync();
       }
       
@@ -370,6 +440,27 @@ export default function VideoPlayerScreen() {
     if (playbackStatus.isLoaded) {
       setCurrentTime(playbackStatus.positionMillis || 0);
       setDuration(playbackStatus.durationMillis || 0);
+      
+      // Check if video is buffering
+      const buffering = playbackStatus.isBuffering || false;
+      
+      // If we're in initial buffering phase and video has enough buffer, end initial buffering
+      if (isInitialBuffering && playbackStatus.durationMillis) {
+        const bufferedDuration = playbackStatus.playableDurationMillis || 0;
+        const minBufferSeconds = 5; // Minimum 5 seconds buffer to end initial buffering
+        const minBufferMillis = minBufferSeconds * 1000;
+        
+        if (bufferedDuration >= minBufferMillis && !buffering) {
+          setIsInitialBuffering(false);
+        }
+      }
+      
+      // Update buffering state, but keep it true during initial buffering phase
+      if (isInitialBuffering) {
+        setIsBuffering(true);
+      } else if (buffering !== isBuffering) {
+        setIsBuffering(buffering);
+      }
       
       // expo-av automatically handles progressive chunk loading via HTTP Range requests
       // Video loads in chunks (typically 10-30 seconds at a time) to avoid long waits
@@ -394,6 +485,10 @@ export default function VideoPlayerScreen() {
       // Only update isPlaying if the status actually changed
       if (playbackStatus.isPlaying !== isPlaying) {
         setIsPlaying(playbackStatus.isPlaying);
+        // Mark as played for the first time when video starts playing
+        if (playbackStatus.isPlaying && !hasPlayedOnce) {
+          setHasPlayedOnce(true);
+        }
       }
       // Keep local mute state in sync with player
       if (playbackStatus.isLoaded && typeof playbackStatus.isMuted === 'boolean' && playbackStatus.isMuted !== isMuted) {
@@ -677,67 +772,115 @@ export default function VideoPlayerScreen() {
 
           {/* Center Play/Pause Button with Wave Animation */}
           <View style={styles.centerControls}>
-            {/* Wave Animation Circles */}
-            <Animated.View 
-              style={[
-                styles.waveCircle,
-                {
-                  transform: [
+            {/* Wave Animation Circles - only show if video hasn't been played yet */}
+            {!hasPlayedOnce && (
+              <>
+                <Animated.View 
+                  style={[
+                    styles.waveCircle,
                     {
-                      scale: waveAnimation1.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 2.5],
+                      transform: [
+                        {
+                          scale: waveAnimation1.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 2.5],
+                          }),
+                        },
+                      ],
+                      opacity: waveAnimation1.interpolate({
+                        inputRange: [0, 0.3, 1],
+                        outputRange: [0.8, 0.4, 0],
                       }),
                     },
-                  ],
-                  opacity: waveAnimation1.interpolate({
-                    inputRange: [0, 0.3, 1],
-                    outputRange: [0.8, 0.4, 0],
-                  }),
-                },
-              ]}
-            />
-            <Animated.View 
-              style={[
-                styles.waveCircle,
-                {
-                  transform: [
+                  ]}
+                />
+                <Animated.View 
+                  style={[
+                    styles.waveCircle,
                     {
-                      scale: waveAnimation2.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 2.5],
+                      transform: [
+                        {
+                          scale: waveAnimation2.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 2.5],
+                          }),
+                        },
+                      ],
+                      opacity: waveAnimation2.interpolate({
+                        inputRange: [0, 0.3, 1],
+                        outputRange: [0.6, 0.3, 0],
                       }),
                     },
-                  ],
-                  opacity: waveAnimation2.interpolate({
-                    inputRange: [0, 0.3, 1],
-                    outputRange: [0.6, 0.3, 0],
-                  }),
-                },
-              ]}
-            />
-            <Animated.View 
-              style={[
-                styles.waveCircle,
-                {
-                  transform: [
+                  ]}
+                />
+                <Animated.View 
+                  style={[
+                    styles.waveCircle,
                     {
-                      scale: waveAnimation3.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 2.5],
+                      transform: [
+                        {
+                          scale: waveAnimation3.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 2.5],
+                          }),
+                        },
+                      ],
+                      opacity: waveAnimation3.interpolate({
+                        inputRange: [0, 0.3, 1],
+                        outputRange: [0.4, 0.2, 0],
                       }),
                     },
-                  ],
-                  opacity: waveAnimation3.interpolate({
-                    inputRange: [0, 0.3, 1],
-                    outputRange: [0.4, 0.2, 0],
-                  }),
-                },
-              ]}
-            />
+                  ]}
+                />
+              </>
+            )}
+            
+            {/* Loading Bubbles - show only during initial buffering (first play) */}
+            {isInitialBuffering && (
+              <Animated.View
+                style={[
+                  styles.loadingBubbleContainer,
+                  {
+                    transform: [
+                      {
+                        rotate: loadingBubbleRotation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '360deg'],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {[...Array(12)].map((_, index) => {
+                  const angle = (index * 360) / 12;
+                  const radius = 50; // Distance from center of play button (40px radius + 10px gap)
+                  const x = Math.cos((angle * Math.PI) / 180) * radius;
+                  const y = Math.sin((angle * Math.PI) / 180) * radius;
+                  
+                  return (
+                    <View
+                      key={index}
+                      style={[
+                        styles.loadingBubble,
+                        {
+                          transform: [{ translateX: x }, { translateY: y }],
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </Animated.View>
+            )}
             
             {/* Play/Pause Button */}
-            <Pressable style={styles.playPauseButton} onPress={togglePlayPause}>
+            <Pressable 
+              style={[
+                styles.playPauseButton,
+                (isBuffering || isPlaying) && styles.playPauseButtonDimmedMore
+              ]} 
+              onPress={togglePlayPause}
+            >
               <Ionicons 
                 name={isPlaying ? "pause" : "play"} 
                 size={40} 
@@ -1012,6 +1155,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  playPauseButtonDimmed: {
+    opacity: 0.5,
+  },
+  playPauseButtonDimmedMore: {
+    opacity: 0.1,
+  },
+  loadingBubbleContainer: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingBubble: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#e50914',
   },
   bottomControls: {
     paddingHorizontal: 16,

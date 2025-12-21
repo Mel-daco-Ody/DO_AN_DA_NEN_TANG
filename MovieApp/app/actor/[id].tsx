@@ -146,8 +146,8 @@ export default function ActorScreen() {
   const renderFilmographyItem = ({ item }: { item: any }) => {
     const pathname = item.isSeries ? '/details/series/[id]' : '/details/movie/[id]';
     return (
-      <Pressable 
-        style={styles.filmItem}
+    <Pressable 
+      style={styles.filmItem}
         onPress={() => {
           router.push({
             pathname,
@@ -161,21 +161,21 @@ export default function ActorScreen() {
             },
           } as any);
         }}
-      >
-        <View style={styles.filmCover}>
-          <ImageWithPlaceholder source={{ uri: item.image }} style={styles.filmImage} showRedBorder={false} />
+    >
+      <View style={styles.filmCover}>
+        <ImageWithPlaceholder source={{ uri: item.image }} style={styles.filmImage} showRedBorder={false} />
+      </View>
+      <View style={styles.filmContent}>
+        <Text style={styles.filmTitle}>{item.title}</Text>
+        <View style={styles.filmGenres}>
+          {(item.genres || []).map((genre: string, index: number) => (
+            <Text key={index} style={styles.filmGenre}>{genre}</Text>
+          ))}
         </View>
-        <View style={styles.filmContent}>
-          <Text style={styles.filmTitle}>{item.title}</Text>
-          <View style={styles.filmGenres}>
-            {(item.genres || []).map((genre: string, index: number) => (
-              <Text key={index} style={styles.filmGenre}>{genre}</Text>
-            ))}
-          </View>
-          <Text style={styles.filmRating}>{item.rating}</Text>
-        </View>
-      </Pressable>
-    );
+        <Text style={styles.filmRating}>{item.rating}</Text>
+      </View>
+    </Pressable>
+  );
   };
 
   const renderPhotoItem = ({ item }: { item: string }) => (
@@ -241,7 +241,7 @@ export default function ActorScreen() {
       <View style={styles.detailsSection}>
         <View style={styles.actorCard}>
           {actor.avatar ? (
-            <ImageWithPlaceholder source={{ uri: actor.avatar }} style={styles.actorImage} showRedBorder={false} />
+          <ImageWithPlaceholder source={{ uri: actor.avatar }} style={styles.actorImage} showRedBorder={false} />
           ) : (
             <View style={[styles.actorImage, styles.actorImagePlaceholder]}>
               <Ionicons name="person" size={40} color="#8e8e93" />
@@ -311,14 +311,14 @@ export default function ActorScreen() {
                 <Text style={styles.loadingText}>Đang tải phim...</Text>
               </View>
             ) : movies.length > 0 ? (
-              <FlatList
+          <FlatList
                 data={movies}
-                renderItem={renderFilmographyItem}
-                keyExtractor={(item) => item.id}
-                numColumns={2}
-                scrollEnabled={false}
-                contentContainerStyle={styles.filmographyGrid}
-              />
+            renderItem={renderFilmographyItem}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            scrollEnabled={false}
+            contentContainerStyle={styles.filmographyGrid}
+          />
             ) : (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>Không có phim nào</Text>

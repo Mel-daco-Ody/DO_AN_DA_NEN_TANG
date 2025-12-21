@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, TextInput, Modal, Pressable, Animated, FlatList, ScrollView, Alert, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,9 +19,12 @@ export default function Header() {
   const { language, setLanguage, t } = useLanguage();
   const { showWarning } = useToast();
   const { width } = useWindowDimensions();
+  const pathname = usePathname();
   
   // Hide search text when screen width is less than 600px
   const showSearchText = width >= 100;
+  // Hide MovieBox button when on MovieBox screen
+  const isMovieBoxScreen = pathname === '/moviebox';
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -92,10 +95,20 @@ export default function Header() {
           if (foundRegion?.regionCode) regionCode = foundRegion.regionCode;
         }
 
+        console.log('Search API call:', { query, tagIds, regionCode });
         const response = await filmzoneApi.searchMovies(query, { tagIds, regionCode });
+        console.log('Search API response:', { 
+          errorCode: response.errorCode, 
+          success: response.success, 
+          hasData: !!response.data,
+          dataLength: response.data?.length || 0,
+          errorMessage: response.errorMessage,
+          fullResponse: JSON.stringify(response, null, 2).substring(0, 500)
+        });
 
-        const isOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-        if (isOk && response.data) {
+        // Check if response is successful (errorCode 200-299 or success === true)
+        const isOk = response.success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (isOk && response.data && Array.isArray(response.data)) {
           let filteredResults = response.data;
 
           // Client-side filter for type (Movies/TV)
@@ -118,11 +131,14 @@ export default function Header() {
             );
           }
 
+          console.log('Search results after filtering:', filteredResults.length);
           setSearchResults(filteredResults);
         } else {
+          console.log('No search results:', { isOk, hasData: !!response.data, dataLength: response.data?.length || 0 });
           setSearchResults([]);
         }
-      } catch {
+      } catch (error) {
+        console.error('Search API error:', error);
         setSearchResults([]);
       }
     };
@@ -239,20 +255,22 @@ export default function Header() {
           <Text style={styles.langText}>{language === 'en' ? 'EN' : 'VI'}</Text>
         </Pressable>
 
-        {/* MovieBox */}
-        <Pressable 
-          style={({ pressed }) => [styles.movieBoxBtn, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]} 
-          onPress={() => {
-            Haptics.selectionAsync();
-            router.push('/moviebox');
-          }}
-        >
-          <Image 
-            source={require('../assets/images/box.png')} 
-            style={styles.movieBoxIcon}
-            contentFit="contain"
-          />
-        </Pressable>
+        {/* MovieBox - Hidden when on MovieBox screen */}
+        {!isMovieBoxScreen && (
+          <Pressable 
+            style={({ pressed }) => [styles.movieBoxBtn, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]} 
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push('/moviebox');
+            }}
+          >
+            <Image 
+              source={require('../assets/images/box.png')} 
+              style={styles.movieBoxIcon}
+              contentFit="contain"
+            />
+          </Pressable>
+        )}
 
         {/* Avatar based on auth status - Signin button is now floating */}
         {authState.isAuthenticated && (

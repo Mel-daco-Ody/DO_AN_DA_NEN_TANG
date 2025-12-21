@@ -1293,27 +1293,103 @@ class FilmZoneApi {
     if (options?.page) params.append('page', options.page.toString());
     if (options?.size) params.append('size', options.size.toString());
 
-    const response = await this.request<MovieDTO[]>(`/api/search/movies?${params.toString()}`);
+    const url = `/api/search/movies?${params.toString()}`;
+    logger.info('Search movies API call', { url, query, options });
     
-    // Transform MovieDTO[] to SearchResultDTO[]
+    const response = await this.request<any>(url);
+    
+    logger.info('Search movies API response', { 
+      errorCode: response.errorCode, 
+      success: response.success, 
+      hasData: !!response.data,
+      dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
+      dataLength: Array.isArray(response.data) ? response.data.length : 0,
+      dataKeys: response.data && typeof response.data === 'object' && !Array.isArray(response.data) ? Object.keys(response.data) : null,
+      dataPreview: JSON.stringify(response.data).substring(0, 200)
+    });
+    
+    // Extract movies array from response
+    // Backend might return { data: [...] } or { movies: [...] } or directly [...]
+    let movies: MovieDTO[] = [];
     if (response.success && response.data) {
-      const searchResults: SearchResultDTO[] = response.data.map(movie => ({
-        id: movie.movieID.toString(),
-        title: movie.title,
-        cover: movie.image,
-        categories: movie.tags?.map(tag => tag.tagName) || [],
-        rating: movie.popularity?.toString() || '0',
-        isSeries: movie.movieType === 'series',
-        year: movie.year?.toString(),
-        studio: movie.region?.regionName,
-      }));
+      if (Array.isArray(response.data)) {
+        movies = response.data;
+      } else if (response.data.data && Array.isArray(response.data.data)) {
+        movies = response.data.data;
+      } else if (response.data.movies && Array.isArray(response.data.movies)) {
+        movies = response.data.movies;
+      } else if (response.data.content && Array.isArray(response.data.content)) {
+        movies = response.data.content;
+      } else if (response.data.items && Array.isArray(response.data.items)) {
+        movies = response.data.items;
+      }
+    }
+    
+    logger.info('Extracted movies array', { count: movies.length });
+    
+    // Log first movie structure for debugging
+    if (movies.length > 0) {
+      logger.info('First movie structure', { 
+        keys: Object.keys(movies[0]),
+        preview: JSON.stringify(movies[0]).substring(0, 300)
+      });
+    }
+    
+    // Transform MovieDTO[] or search response format to SearchResultDTO[]
+    if (movies.length > 0) {
+      const searchResults: SearchResultDTO[] = movies.map((movie: any) => {
+        // Handle different response formats
+        // Format 1: MovieDTO format (has movieID)
+        // Format 2: Search response format (has id, different structure)
+        const movieId = movie.movieID !== undefined 
+          ? movie.movieID.toString() 
+          : (movie.id !== undefined ? movie.id.toString() : '');
+        
+        const title = movie.title || '';
+        const cover = movie.image || movie.cover || '';
+        const year = movie.year !== undefined ? movie.year.toString() : undefined;
+        
+        // Handle tags/categories - could be tags array or categories array
+        let categories: string[] = [];
+        if (movie.tags && Array.isArray(movie.tags)) {
+          categories = movie.tags.map((tag: any) => tag.tagName || tag.name || tag);
+        } else if (movie.categories && Array.isArray(movie.categories)) {
+          categories = movie.categories;
+        }
+        
+        const rating = movie.popularity !== undefined 
+          ? movie.popularity.toString() 
+          : (movie.rating !== undefined ? movie.rating.toString() : '0');
+        
+        const isSeries = movie.movieType === 'series' || movie.isSeries === true || movie.type === 'series';
+        
+        const studio = movie.region?.regionName || movie.region?.name || movie.studio;
+        
+        return {
+          id: movieId,
+          title,
+          cover,
+          categories,
+          rating,
+          isSeries,
+          year,
+          studio,
+        };
+      });
 
+      logger.info('Search results transformed', { count: searchResults.length });
       return {
         ...response,
         data: searchResults,
       };
     }
 
+    logger.warn('Search movies returned no data', { 
+      errorCode: response.errorCode, 
+      errorMessage: response.errorMessage,
+      success: response.success 
+    });
+    
     return {
       ...response,
       data: [],

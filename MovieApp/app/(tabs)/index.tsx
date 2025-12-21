@@ -1156,7 +1156,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
     marginLeft: 8,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderRightWidth: 1,
+    borderLeftWidth: 1,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
     borderColor: 'rgb(255, 0, 0)',
   },
   genresExpandIcon: {

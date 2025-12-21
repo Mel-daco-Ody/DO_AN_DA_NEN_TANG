@@ -264,9 +264,22 @@ export default function MovieBoxScreen() {
     </Pressable>
   );
 
+  const handleBack = async () => {
+    try {
+      await Haptics.selectionAsync();
+      router.back();
+    } catch (error) {
+      router.back();
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Header />
+      {/* Back Button */}
+      <Pressable style={styles.backButton} onPress={handleBack}>
+        <Ionicons name="arrow-back" size={24} color="#e50914" />
+      </Pressable>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header Section */}
         <View style={styles.headerSection}>
@@ -384,6 +397,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#2b2b31', // Same as homescreen background
+  },
+  backButton: {
+    position: 'absolute',
+    top: 120, // Below header (60px header + 40px padding)
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#1c1c23',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    borderWidth: 2,
+    borderColor: '#e50914',
   },
   content: {
     flex: 1,
@@ -521,6 +548,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 48,
+  },
+  emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',

@@ -29,14 +29,14 @@ export default function CategoryScreen() {
           tagId = Number(tagID);
         } else {
           // 2. Nếu không có tagID, lấy toàn bộ tags để map tagName -> tagID
-          const tagsResponse = await filmzoneApi.getAllTags();
-          const isTagsOk = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
+        const tagsResponse = await filmzoneApi.getAllTags();
+        const isTagsOk = tagsResponse.errorCode >= 200 && tagsResponse.errorCode < 300 && tagsResponse.data;
 
-          if (isTagsOk) {
-            const matchedTag = tagsResponse.data!.find(
-              (t: any) => t.tagName.toLowerCase() === (genre as string).toLowerCase()
-            );
-            tagId = matchedTag?.tagID;
+        if (isTagsOk) {
+          const matchedTag = tagsResponse.data!.find(
+            (t: any) => t.tagName.toLowerCase() === (genre as string).toLowerCase()
+          );
+          tagId = matchedTag?.tagID;
           }
         }
 
@@ -55,14 +55,14 @@ export default function CategoryScreen() {
         } else {
           // Fallback: search theo text genre nếu không tìm được tagID
           const searchResponse = await filmzoneApi.searchMovies(genre as string);
-          const isSearchOk =
-            searchResponse.errorCode >= 200 && searchResponse.errorCode < 300 && searchResponse.data;
+        const isSearchOk =
+          searchResponse.errorCode >= 200 && searchResponse.errorCode < 300 && searchResponse.data;
 
-          if (!isSearchOk) {
-            setItems([]);
-            setError('Không thể tải danh sách phim.');
-          } else {
-            setItems(searchResponse.data || []);
+        if (!isSearchOk) {
+          setItems([]);
+          setError('Không thể tải danh sách phim.');
+        } else {
+          setItems(searchResponse.data || []);
           }
         }
       } catch (e) {
@@ -88,33 +88,33 @@ export default function CategoryScreen() {
     const year = item.year || item.releaseDate?.substring(0, 4) || '';
 
     return (
-      <Pressable 
-        style={[styles.itemCard, { width: itemWidth }]} 
-        onPress={() => {
-          router.push({
-            pathname,
-            params: {
+    <Pressable 
+      style={[styles.itemCard, { width: itemWidth }]} 
+      onPress={() => {
+        router.push({
+          pathname,
+          params: {
               id: movieId,
-              title: item.title,
+            title: item.title,
               cover: coverImage,
               categories: categories,
               rating: rating,
               year: year,
               country: item.region?.regionName || item.studio || '',
-            },
-          } as any);
-        }}
-      >
-        <ImageWithPlaceholder 
+          },
+        } as any);
+      }}
+    >
+      <ImageWithPlaceholder 
           source={{ uri: coverImage }} 
-          style={styles.itemImage} 
-          showRedBorder={false}
-        />
-        <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
+        style={styles.itemImage} 
+        showRedBorder={false}
+      />
+      <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
         <Text style={styles.itemRating}>{rating}</Text>
         <Text style={styles.itemYear}>{year}</Text>
-      </Pressable>
-    );
+    </Pressable>
+  );
   };
 
   return (
