@@ -250,6 +250,41 @@ class FilmZoneApi {
   }
 
   /**
+   * POST /login/google-login
+   * Google OAuth login
+   */
+  async googleLogin(googleToken: string): Promise<FilmZoneResponse<LoginResponse>> {
+    const response = await this.request<any>('/login/google-login', {
+      method: 'POST',
+      body: JSON.stringify({ token: googleToken }),
+    });
+
+    if (response.success && response.data) {
+      // Map response similar to regular login
+      const loginData = response.data;
+      const mappedData: LoginResponse = {
+        token: loginData.accessToken || loginData.token,
+        refreshToken: loginData.refreshToken,
+        sessionId: loginData.sessionId || 0,
+        deviceId: loginData.deviceId || '',
+        tokenExpiration: loginData.accessTokenExpiresAt || loginData.tokenExpiration || '',
+        refreshTokenExpiration: loginData.refreshTokenExpiresAt || loginData.refreshTokenExpiration || '',
+        user: loginData.user, // May be undefined for real API
+      };
+      
+      this.setToken(mappedData.token);
+      this.setRefreshToken(mappedData.refreshToken);
+      
+      return {
+        ...response,
+        data: mappedData,
+      };
+    }
+
+    return response;
+  }
+
+  /**
    * POST /api/Auth/RefreshToken
    */
   async refreshAccessToken(): Promise<FilmZoneResponse<LoginResponse>> {
@@ -1298,6 +1333,16 @@ class FilmZoneApi {
     
     const response = await this.request<any>(url);
     
+    let dataPreview = 'No data';
+    try {
+      if (response.data) {
+        const stringified = JSON.stringify(response.data);
+        dataPreview = stringified ? stringified.substring(0, 200) : 'Unable to stringify';
+      }
+    } catch (error) {
+      dataPreview = 'Error stringifying data';
+    }
+    
     logger.info('Search movies API response', { 
       errorCode: response.errorCode, 
       success: response.success, 
@@ -1305,7 +1350,7 @@ class FilmZoneApi {
       dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
       dataLength: Array.isArray(response.data) ? response.data.length : 0,
       dataKeys: response.data && typeof response.data === 'object' && !Array.isArray(response.data) ? Object.keys(response.data) : null,
-      dataPreview: JSON.stringify(response.data).substring(0, 200)
+      dataPreview
     });
     
     // Extract movies array from response
@@ -1328,11 +1373,16 @@ class FilmZoneApi {
     logger.info('Extracted movies array', { count: movies.length });
     
     // Log first movie structure for debugging
-    if (movies.length > 0) {
-      logger.info('First movie structure', { 
-        keys: Object.keys(movies[0]),
-        preview: JSON.stringify(movies[0]).substring(0, 300)
-      });
+    if (movies.length > 0 && movies[0]) {
+      try {
+        const preview = JSON.stringify(movies[0]);
+        logger.info('First movie structure', { 
+          keys: Object.keys(movies[0]),
+          preview: preview ? preview.substring(0, 300) : 'Unable to stringify'
+        });
+      } catch (error) {
+        logger.warn('Failed to stringify first movie', { error });
+      }
     }
     
     // Transform MovieDTO[] or search response format to SearchResultDTO[]

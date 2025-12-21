@@ -26,7 +26,7 @@ export default function FloatingSigninButton({ style }: FloatingSigninButtonProp
   // Position state
   const [position, setPosition] = useState({
     x: screenWidth - 70, // Start from right edge
-    y: screenHeight / 2 - 115, // Start from center vertically
+    y: screenHeight / 2 - 90, // Start from center vertically
   });
   
   // Animation values
@@ -84,7 +84,7 @@ export default function FloatingSigninButton({ style }: FloatingSigninButtonProp
         
         // Always snap to center right of screen
         const finalX = screenWidth - 70; // Right edge
-        const finalY = screenHeight / 2 - 115; // Center vertically (30 = half of button height)
+        const finalY = screenHeight / 2 - 90 ; // Center vertically (30 = half of button height)
         
         // Haptic feedback when releasing
         try {

@@ -21,6 +21,7 @@ interface AuthState {
 interface AuthContextType {
   authState: AuthState;
   signIn: (userName: string, password: string) => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string | null }>;
+  googleSignIn: (googleToken: string) => Promise<{ success: boolean; error?: string }>;
   verifyMfa: (mfaTicket: string, code: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateUser: (user: Partial<AuthUser>) => void;
@@ -309,6 +310,107 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const googleSignIn = async (googleToken: string) => {
+    try {
+      console.log('AuthContext: Starting Google login');
+      const response = await filmzoneApi.googleLogin(googleToken);
+      
+      console.log('AuthContext: Google login response:', JSON.stringify(response, null, 2));
+      
+      if (response.errorCode === 200 && response.data) {
+        const loginData = response.data;
+        console.log('AuthContext: Google login data:', JSON.stringify(loginData, null, 2));
+        
+        const token = (loginData as any).accessToken || (loginData as any).token;
+        const refreshToken = loginData.refreshToken;
+        
+        if (!token) {
+          console.error('AuthContext: No token in Google login response');
+          return {
+            success: false,
+            error: 'Google login response missing token'
+          };
+        }
+        
+        // Set token in API client immediately
+        movieAppApi.setToken(token);
+        filmzoneApi.setToken(token);
+        console.log('AuthContext: Token set in API client');
+        
+        // Google login typically doesn't require MFA, but check just in case
+        const userFromResponse = (loginData as any).user;
+        
+        // Login successful - get user info from API
+        console.log('AuthContext: Google login successful, fetching user data...');
+        
+        let userData: AuthUser | null = null;
+        
+        // Try to get user from API
+        try {
+          console.log('AuthContext: Fetching current user from API...');
+          const userResponse = await movieAppApi.getCurrentUser();
+          console.log('AuthContext: getCurrentUser response:', JSON.stringify(userResponse, null, 2));
+          
+          if (userResponse.errorCode === 200 && userResponse.data) {
+            userData = mapUserDTOToAuthUser(userResponse.data);
+            console.log('AuthContext: Mapped user from getCurrentUser:', userData);
+          } else {
+            console.warn('AuthContext: getCurrentUser returned error:', userResponse.errorMessage);
+          }
+        } catch (error) {
+          console.warn('AuthContext: Failed to get current user from API:', error);
+        }
+        
+        // Fallback: try to use user from login response if getCurrentUser failed
+        if (!userData && userFromResponse) {
+          console.log('AuthContext: Falling back to user from Google login response');
+          userData = mapUserDTOToAuthUser(userFromResponse);
+          console.log('AuthContext: Mapped user from Google login response:', userData);
+        }
+
+        if (!userData) {
+          console.error('AuthContext: ERROR - No user data available after Google login!');
+          console.error('AuthContext: Login data:', JSON.stringify(loginData, null, 2));
+          return {
+            success: false,
+            error: 'Google login successful but user data not available. Please try again.'
+          };
+        }
+
+        const newAuthState = {
+          isAuthenticated: true,
+          user: userData,
+          token: token,
+          refreshToken: refreshToken,
+          requiresMfa: false,
+          mfaTicket: null,
+        };
+        
+        console.log('AuthContext: Setting auth state:', {
+          isAuthenticated: newAuthState.isAuthenticated,
+          hasUser: !!newAuthState.user,
+          userId: newAuthState.user?.userID,
+          userName: newAuthState.user?.userName,
+        });
+        
+        setAuthState(newAuthState);
+        return { success: true };
+      } else {
+        console.error('AuthContext: Google login failed:', response.errorMessage);
+        return { 
+          success: false, 
+          error: response.errorMessage || 'Google login failed' 
+        };
+      }
+    } catch (error) {
+      console.error('AuthContext: Google login exception:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Google login failed' 
+      };
+    }
+  };
+
   const verifyMfa = async (mfaTicket: string, code: string) => {
     try {
       if (!pendingLogin) {
@@ -445,6 +547,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     <AuthContext.Provider value={{
       authState,
       signIn,
+      googleSignIn,
       verifyMfa,
       signOut,
       updateUser,

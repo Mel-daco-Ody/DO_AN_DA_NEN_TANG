@@ -3,17 +3,24 @@ import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, Keyboard
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import { Ionicons } from '@expo/vector-icons';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
+// Complete auth session for Google OAuth
+WebBrowser.maybeCompleteAuthSession();
+
 export default function SignInScreen() {
-  const { authState, signIn, verifyMfa } = useAuth();
+  const { authState, signIn, googleSignIn, verifyMfa } = useAuth();
   const { showError } = useToast();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showMfaModal, setShowMfaModal] = useState(false);
   const [mfaCode, setMfaCode] = useState(['', '', '', '', '', '']);
@@ -43,6 +50,59 @@ export default function SignInScreen() {
   const handleMfaKeyPress = (index: number, key: string) => {
     if (key === 'Backspace' && !mfaCode[index] && index > 0) {
       mfaInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    try {
+      await Haptics.selectionAsync();
+      
+      // Use Google OAuth with expo-auth-session
+      // Note: You'll need to configure Google OAuth credentials in your Expo project
+      const discovery = {
+        authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+        tokenEndpoint: 'https://oauth2.googleapis.com/token',
+        revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
+      };
+
+      const request = new AuthSession.AuthRequest({
+        clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
+        scopes: ['openid', 'profile', 'email'],
+        responseType: AuthSession.ResponseType.Token,
+        redirectUri: AuthSession.makeRedirectUri(),
+      });
+
+      const result = await request.promptAsync(discovery);
+
+      if (result.type === 'success') {
+        const { access_token } = result.params;
+        
+        if (!access_token) {
+          showError('Failed to get Google access token');
+          return;
+        }
+
+        // Call backend API with Google token
+        const loginResult = await googleSignIn(access_token);
+        
+        if (loginResult.success) {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.replace('/');
+        } else {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          showError(loginResult.error || 'Google sign in failed');
+        }
+      } else if (result.type === 'error') {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showError('Google sign in was cancelled or failed');
+      }
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showError('An error occurred during Google sign in');
+      console.error('Google sign in error:', error);
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -162,11 +222,34 @@ export default function SignInScreen() {
                 setIsLoading(false);
               }
             }}
-            disabled={isLoading}
+            disabled={isLoading || isGoogleLoading}
           >
             <Text style={styles.signInButtonText}>
               {isLoading ? 'Signing In...' : 'Sign In'}
             </Text>
+          </Pressable>
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>Or login with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Google Sign In Button */}
+          <Pressable
+            style={[styles.googleButton, (isGoogleLoading || isLoading) && styles.disabledButton]}
+            onPress={handleGoogleSignIn}
+            disabled={isGoogleLoading || isLoading}
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={20} color="#fff" style={styles.googleIcon} />
+                <Text style={styles.googleButtonText}>Sign in with Google</Text>
+              </>
+            )}
           </Pressable>
 
           <Pressable onPress={goSignUp}>
@@ -202,6 +285,27 @@ const styles = StyleSheet.create({
   signInButton: { backgroundColor: '#e50914', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   signInButtonText: { color: '#fff', fontWeight: '700' },
   disabledButton: { opacity: 0.6 },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#3a3a3a' },
+  dividerText: { color: '#8e8e93', marginHorizontal: 12, fontSize: 12 },
+  googleButton: { 
+    backgroundColor: 'rgba(0, 0, 0, 0.91)', 
+    paddingVertical: 12, 
+    borderRadius: 10, 
+    alignItems: 'center', 
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: '#000', 
+    shadowOpacity: 0.25, 
+    shadowRadius: 6, 
+    shadowOffset: { width: 0, height: 3 }, 
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgb(255, 0, 0)',
+  },
+  googleIcon: { marginRight: 8, color: 'rgb(255, 0, 0)' },
+  googleButtonText: { color: 'rgb(255, 0, 0)', fontWeight: '700', fontSize: 14 },
   subText: { color: '#c7c7cc', textAlign: 'center', marginTop: 12 },
   link: { color: '#ffd166', fontWeight: '700' },
 
