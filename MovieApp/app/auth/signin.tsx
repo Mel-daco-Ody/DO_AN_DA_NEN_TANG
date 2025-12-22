@@ -1,20 +1,17 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
-// Complete auth session for Google OAuth
-WebBrowser.maybeCompleteAuthSession();
-
 export default function SignInScreen() {
-  const { authState, signIn, googleSignIn, verifyMfa } = useAuth();
+  const { authState, signIn, verifyMfa } = useAuth();
   const { showError } = useToast();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
@@ -26,6 +23,31 @@ export default function SignInScreen() {
   const [mfaCode, setMfaCode] = useState(['', '', '', '', '', '']);
   const [isVerifyingMfa, setIsVerifyingMfa] = useState(false);
   const mfaInputRefs = useRef<(TextInput | null)[]>([]);
+
+  // Listen for deep links (in case backend redirects to app)
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', (event) => {
+      const { url } = event;
+      console.log('Deep link received:', url);
+      
+      // Check if this is Google OAuth callback
+      if (url.includes('movieapp://auth/google/callback') || url.includes('auth/google/callback')) {
+        // Navigate to callback screen which will handle the login
+        router.push('/auth/google/callback');
+      }
+    });
+
+    // Check if app was opened via deep link
+    Linking.getInitialURL().then((url) => {
+      if (url && (url.includes('movieapp://auth/google/callback') || url.includes('auth/google/callback'))) {
+        router.push('/auth/google/callback');
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   
   const goSignUp = async () => { try { await Haptics.selectionAsync(); } catch {} router.push('/auth/signup'); };
   const goHome = async () => { try { await Haptics.selectionAsync(); } catch {} router.back(); };
@@ -58,44 +80,135 @@ export default function SignInScreen() {
     try {
       await Haptics.selectionAsync();
       
-      // Use Google OAuth with expo-auth-session
-      // Note: You'll need to configure Google OAuth credentials in your Expo project
-      const discovery = {
-        authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-        tokenEndpoint: 'https://oauth2.googleapis.com/token',
-        revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
-      };
+      // Redirect to backend Google OAuth endpoint
+      // Backend will handle OAuth flow and redirect back to app
+      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'https://filmzone-api.koyeb.app';
+      
+      // Use fixed app scheme - this is what backend should redirect to
+      // Format: scheme://path
+      const redirectUri = 'movieapp://auth/google/callback';
+      
+      // Encode returnUrl properly for URL parameter
+      // Backend MUST use this returnUrl to redirect back to app (not localhost)
+      const returnUrl = encodeURIComponent(redirectUri);
+      
+      // Build Google login URL with returnUrl parameter
+      // IMPORTANT: Backend must detect this is a mobile app request and redirect to returnUrl
+      // If backend redirects to localhost, it means backend is not handling returnUrl correctly
+      // Add 'mobile=true' parameter to help backend identify this is a mobile app request
+      const googleLoginUrl = `${apiBase}/login/google-login?returnUrl=${returnUrl}&mobile=true&platform=react-native`;
+      
+      console.log('=== Google OAuth Debug ===');
+      console.log('Google login URL:', googleLoginUrl);
+      console.log('Redirect URI (returnUrl):', redirectUri);
+      console.log('Encoded returnUrl:', returnUrl);
+      console.log('Expected backend redirect:', redirectUri);
+      console.log('Backend MUST redirect to:', redirectUri);
+      console.log('If backend redirects to localhost, backend needs to be updated');
+      console.log('========================');
+      
+      // Open browser for OAuth flow
+      // When backend redirects to movieapp://auth/google/callback, 
+      // Expo Router will automatically navigate to the callback screen
+      // If backend redirects to localhost, deep link listener will catch it
+      const result = await WebBrowser.openAuthSessionAsync(
+        googleLoginUrl,
+        redirectUri
+      );
+      
+      console.log('WebBrowser result type:', result.type);
+      let resultUrl = '';
+      if (result.type === 'success' && 'url' in result) {
+        resultUrl = result.url;
+        console.log('WebBrowser result URL:', resultUrl);
+      }
 
-      const request = new AuthSession.AuthRequest({
-        clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
-        scopes: ['openid', 'profile', 'email'],
-        responseType: AuthSession.ResponseType.Token,
-        redirectUri: AuthSession.makeRedirectUri(),
-      });
-
-      const result = await request.promptAsync(discovery);
-
+      // If result.type === 'success', check if backend redirected correctly
       if (result.type === 'success') {
-        const { access_token } = result.params;
-        
-        if (!access_token) {
-          showError('Failed to get Google access token');
-          return;
-        }
-
-        // Call backend API with Google token
-        const loginResult = await googleSignIn(access_token);
-        
-        if (loginResult.success) {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          router.replace('/');
+        // Check if backend redirected to app scheme (correct)
+        if (resultUrl.includes('movieapp://') || resultUrl.includes('auth/google/callback')) {
+          console.log('Backend redirected to app scheme - callback screen will handle');
+          // Callback screen will handle login verification
+        } 
+        // Backend redirected to localhost/web URL (incorrect, but we can try to handle it)
+        else if (resultUrl.includes('localhost') || resultUrl.includes('http://') || resultUrl.includes('https://')) {
+          console.log('Backend redirected to web URL instead of app scheme');
+          console.log('Attempting to extract token or handle redirect...');
+          
+          // Try to extract token from URL hash or params
+          let token: string | null = null;
+          try {
+            // Try to parse URL
+            const url = new URL(resultUrl);
+            token = url.searchParams.get('token') || url.hash.split('token=')[1]?.split('&')[0];
+          } catch {
+            // If URL parsing fails, try regex
+            const tokenMatch = resultUrl.match(/[?&#]token=([^&]+)/);
+            token = tokenMatch ? tokenMatch[1] : null;
+          }
+          
+          if (token) {
+            // Token found in URL, set it and verify login
+            console.log('Token found in redirect URL');
+            try {
+              const { filmzoneApi } = await import('../../services/filmzone-api');
+              filmzoneApi.setToken(token);
+              
+              const userResponse = await filmzoneApi.getCurrentUser();
+              if (userResponse.errorCode === 200 && userResponse.data) {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                router.replace('/');
+                return;
+              }
+            } catch (error) {
+              console.error('Error setting token from redirect:', error);
+            }
+          }
+          
+          // If no token in URL, backend might have set cookie
+          // Try to verify login by calling refresh or getCurrentUser
+          try {
+            const { filmzoneApi } = await import('../../services/filmzone-api');
+            
+            // Try refresh endpoint first
+            const refreshResponse = await filmzoneApi.refreshAccessToken();
+            if (refreshResponse.success && refreshResponse.data?.token) {
+              const userResponse = await filmzoneApi.getCurrentUser();
+              if (userResponse.errorCode === 200 && userResponse.data) {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                router.replace('/');
+                return;
+              }
+            }
+            
+            // Try getCurrentUser (cookie might be set)
+            const userResponse = await filmzoneApi.getCurrentUser();
+            if (userResponse.errorCode === 200 && userResponse.data) {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.replace('/');
+              return;
+            }
+            
+            // If all fails, show error
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            showError('Google sign in failed. Backend redirected to web URL instead of app.');
+            console.error('Backend redirected to:', resultUrl);
+            console.error('Expected redirect to: movieapp://auth/google/callback');
+          } catch (error) {
+            console.error('Error verifying login after redirect:', error);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            showError('Google sign in failed. Please try again.');
+          }
         } else {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          showError(loginResult.error || 'Google sign in failed');
+          // Unknown redirect, try to handle it
+          console.log('Unknown redirect format, attempting to handle...');
         }
-      } else if (result.type === 'error') {
+      } else if (result.type === 'cancel') {
+        // User cancelled
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        showError('Google sign in was cancelled or failed');
+        showError('Google sign in failed');
       }
     } catch (error) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

@@ -10,7 +10,17 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mel_daco_ody.MovieApp"
+      "bundleIdentifier": "com.mel_daco_ody.MovieApp",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "movieapp",
+              "com.googleusercontent.apps.116900779607-n832rt7av55nt2ahcc3se1i8r0ik8thp"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "icon": "./assets/images/logo.png",
@@ -18,7 +28,22 @@
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#2b2b31"
       },
-      "package": "com.mel_daco_ody.MovieApp"
+      "package": "com.mel_daco_ody.MovieApp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "movieapp"
+            },
+            {
+              "scheme": "com.googleusercontent.apps.116900779607-n832rt7av55nt2ahcc3se1i8r0ik8thp"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

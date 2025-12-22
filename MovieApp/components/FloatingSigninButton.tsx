@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#e50914',
+    shadowColor: 'rgba(145, 9, 9, 0.8)',
     shadowOffset: {
       width: 0,
       height: 6,
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     elevation: 12,
     // Viền đỏ to ngoài
     borderWidth: 3,
-    borderColor: '#e50914',
+    borderColor: 'rgba(233, 14, 14, 0.8)',
     // Viền đỏ nhỏ trong
     padding: 2,
   },

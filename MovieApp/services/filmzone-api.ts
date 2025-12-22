@@ -1376,10 +1376,10 @@ class FilmZoneApi {
     if (movies.length > 0 && movies[0]) {
       try {
         const preview = JSON.stringify(movies[0]);
-        logger.info('First movie structure', { 
-          keys: Object.keys(movies[0]),
+      logger.info('First movie structure', { 
+        keys: Object.keys(movies[0]),
           preview: preview ? preview.substring(0, 300) : 'Unable to stringify'
-        });
+      });
       } catch (error) {
         logger.warn('Failed to stringify first movie', { error });
       }
