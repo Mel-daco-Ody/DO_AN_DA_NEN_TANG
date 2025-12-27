@@ -76,7 +76,7 @@ class FilmZoneApi {
     return headers;
   }
 
-  private async request<T>(
+  async request<T>(
     endpoint: string,
     options: RequestInit = {},
     customTimeout?: number
@@ -180,10 +180,26 @@ class FilmZoneApi {
         };
       }
 
+      // Network errors are common when:
+      // - backend is down
+      // - baseURL is wrong (localhost on device/emulator)
+      // - no internet / DNS fail / SSL fail
+      const msg = (error?.message || '').toString();
+      const isNetworkFailed = msg.toLowerCase().includes('network request failed');
+
+      if (isNetworkFailed) {
+        logger.warn('API network request failed', { endpoint, baseURL: this.config.baseURL });
+        return {
+          errorCode: 0,
+          errorMessage: `Network request failed. Check API baseURL (${this.config.baseURL}) and server status.`,
+          success: false,
+        };
+      }
+
       logger.error('API request failed', { endpoint, error });
       return {
         errorCode: 500,
-        errorMessage: error.message || 'Network error',
+        errorMessage: error?.message || 'Network error',
         success: false,
       };
     }
@@ -250,17 +266,18 @@ class FilmZoneApi {
   }
 
   /**
-   * POST /login/google-login
-   * Google OAuth login
+   * POST /login/login/mobile/google
+   * Sign in with Google
    */
-  async googleLogin(googleToken: string): Promise<FilmZoneResponse<LoginResponse>> {
-    const response = await this.request<any>('/login/google-login', {
+  async loginWithGoogle(): Promise<FilmZoneResponse<LoginResponse>> {
+    const response = await this.request<any>('/login/login/mobile/google', {
       method: 'POST',
-      body: JSON.stringify({ token: googleToken }),
+      body: JSON.stringify({}),
     });
 
     if (response.success && response.data) {
-      // Map response similar to regular login
+      // API thật trả về { accessToken, refreshToken, ... } thay vì { token, refreshToken, ... }
+      // Map sang format mong đợi
       const loginData = response.data;
       const mappedData: LoginResponse = {
         token: loginData.accessToken || loginData.token,
@@ -275,6 +292,7 @@ class FilmZoneApi {
       this.setToken(mappedData.token);
       this.setRefreshToken(mappedData.refreshToken);
       
+      // Return mapped response
       return {
         ...response,
         data: mappedData,
@@ -320,7 +338,7 @@ class FilmZoneApi {
    * GET /user/getUserById?userId={userID}
    * According to API docs, this endpoint uses query parameter, not path parameter
    */
-  async getUserById(userID: number): Promise<FilmZoneResponse<UserDTO>> {
+  async getUserById(userID: number): Promise<FilmZoneResponse<UserDTO & { profile?: any }>> {
     // Filter out invalid userIDs
     if (!userID || userID <= 0 || isNaN(userID)) {
       return {
@@ -331,7 +349,7 @@ class FilmZoneApi {
     }
 
     // Use query parameter as per API documentation
-    return this.request<UserDTO>(`/user/getUserById?userId=${userID}`);
+    return this.request<UserDTO & { profile?: any }>(`/user/getUserById?userId=${userID}`);
   }
 
   /**
@@ -341,6 +359,33 @@ class FilmZoneApi {
     return this.request<UserDTO>('/api/Auth/UpdateUser', {
       method: 'PUT',
       body: JSON.stringify(userUpdates),
+    });
+  }
+
+  /**
+   * PUT /user/update/profile
+   * Cập nhật tên người dùng với newUserName và userID
+   */
+  async updateUserName(params: {
+    userID: number;
+    newUserName: string;
+  }): Promise<FilmZoneResponse<UserDTO>> {
+    const { userID, newUserName } = params;
+
+    if (!userID || !newUserName || !newUserName.trim()) {
+      return {
+        errorCode: 400,
+        errorMessage: 'userID and newUserName are required',
+        success: false,
+      };
+    }
+
+    return this.request<UserDTO>('/user/update/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        userID,
+        newUserName: newUserName.trim(),
+      }),
     });
   }
 
@@ -787,6 +832,24 @@ class FilmZoneApi {
    */
   async getMovieSourcesByMovieId(movieId: number): Promise<FilmZoneResponse<any>> {
     return this.request<any>(`/movie/MovieSource/GetMovieSourcesByMovieIdPublic/getByMovieId/${movieId}`);
+  }
+
+  // ==================== SUBTITLE APIs ====================
+
+  /**
+   * GET /movie/MovieSubTitle/GetMovieSubTitlesBySourceID/{sourceId}
+   * Lấy danh sách subtitle theo movie sourceID
+   */
+  async getMovieSubtitlesBySourceID(sourceId: number): Promise<FilmZoneResponse<any[]>> {
+    return this.request<any[]>(`/movie/MovieSubTitle/GetMovieSubTitlesBySourceID/${sourceId}`);
+  }
+
+  /**
+   * GET /movie/EpisodeSubTitle/GetEpisodeSubTitlesBySourceID/{sourceId}
+   * Lấy danh sách subtitle theo episode sourceID
+   */
+  async getEpisodeSubtitlesBySourceID(sourceId: number): Promise<FilmZoneResponse<any[]>> {
+    return this.request<any[]>(`/movie/EpisodeSubTitle/GetEpisodeSubTitlesBySourceID/${sourceId}`);
   }
 
   // ==================== WATCH PROGRESS APIs ====================
@@ -1376,10 +1439,10 @@ class FilmZoneApi {
     if (movies.length > 0 && movies[0]) {
       try {
         const preview = JSON.stringify(movies[0]);
-      logger.info('First movie structure', { 
-        keys: Object.keys(movies[0]),
+        logger.info('First movie structure', { 
+          keys: Object.keys(movies[0]),
           preview: preview ? preview.substring(0, 300) : 'Unable to stringify'
-      });
+        });
       } catch (error) {
         logger.warn('Failed to stringify first movie', { error });
       }
@@ -1692,7 +1755,18 @@ class FilmZoneApi {
 }
 
 // Create API instance
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://filmzone-api.koyeb.app';
+// Note for developers:
+// - On Android emulator: Use 10.0.2.2 for localhost
+// - On iOS simulator: Use localhost or 127.0.0.1
+// - On real device: Use your machine's LAN IP (e.g., 192.168.1.xxx)
+const LOCAL_IP = '10.0.2.2'; // Default for Android emulator
+const PORT = 5000; // Your backend port
+
+// Uncomment the appropriate line based on your environment:
+// const BASE_URL = `http://${LOCAL_IP}:${PORT}`; // For emulator/device
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://filmzone-api.koyeb.app'; // Production
+
+console.log(`[API] Using baseURL: ${BASE_URL}`);
 
 export const filmzoneApi = new FilmZoneApi({
   baseURL: BASE_URL,

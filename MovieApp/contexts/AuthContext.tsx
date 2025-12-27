@@ -2,12 +2,13 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthUser } from '../shared-data';
 import { movieAppApi } from '../services/mock-api';
-import filmzoneApi from '../services/filmzone-api';
+import { filmzoneApi } from '../services/filmzone-api';
 
 // Debug: Log AuthContext API instance
 console.log('AuthContext API instance:', movieAppApi);
 
 const AUTH_STORAGE_KEY = '@auth_state';
+const REMEMBER_ME_KEY = '@remember_me';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -20,8 +21,8 @@ interface AuthState {
 
 interface AuthContextType {
   authState: AuthState;
-  signIn: (userName: string, password: string) => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string | null }>;
-  googleSignIn: (googleToken: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (userName: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string | null }>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string; requiresMfa?: boolean; mfaTicket?: string | null }>;
   verifyMfa: (mfaTicket: string, code: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateUser: (user: Partial<AuthUser>) => void;
@@ -57,37 +58,52 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   // store pending login response when MFA is required
   const [pendingLogin, setPendingLogin] = useState<any | null>(null);
+  const [rememberMe, setRememberMe] = useState<boolean>(false);
 
   // Load auth state from storage on mount
   useEffect(() => {
     const loadAuthState = async () => {
       try {
-        const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-        if (stored) {
-          const parsedState = JSON.parse(stored);
-          console.log('AuthContext: Loading auth state from storage:', {
-            isAuthenticated: parsedState.isAuthenticated,
-            hasUser: !!parsedState.user,
-            userId: parsedState.user?.userID,
-            hasToken: !!parsedState.token,
-          });
-          
-          // Validate that we have required data
-          if (parsedState.isAuthenticated && parsedState.token && parsedState.user?.userID) {
-            // Restore token to API client
-            movieAppApi.setToken(parsedState.token);
-            filmzoneApi.setToken(parsedState.token);
-            setAuthState(parsedState);
-            console.log('AuthContext: Auth state restored from storage');
-          } else {
-            console.warn('AuthContext: Invalid auth state in storage, clearing...');
-            await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-            setAuthState(defaultAuthState);
+        // Check if remember me was enabled
+        const rememberMeValue = await AsyncStorage.getItem(REMEMBER_ME_KEY);
+        const shouldRemember = rememberMeValue === 'true';
+        setRememberMe(shouldRemember);
+        
+        // Only load auth state if remember me was enabled
+        if (shouldRemember) {
+          const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+          if (stored) {
+            const parsedState = JSON.parse(stored);
+            console.log('AuthContext: Loading auth state from storage:', {
+              isAuthenticated: parsedState.isAuthenticated,
+              hasUser: !!parsedState.user,
+              userId: parsedState.user?.userID,
+              hasToken: !!parsedState.token,
+            });
+            
+            // Validate that we have required data
+            if (parsedState.isAuthenticated && parsedState.token && parsedState.user?.userID) {
+              // Restore token to API client
+              movieAppApi.setToken(parsedState.token);
+              filmzoneApi.setToken(parsedState.token);
+              setAuthState(parsedState);
+              console.log('AuthContext: Auth state restored from storage');
+            } else {
+              console.warn('AuthContext: Invalid auth state in storage, clearing...');
+              await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+              await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+              setAuthState(defaultAuthState);
+            }
           }
+        } else {
+          // If remember me is not enabled, clear any stored auth state
+          await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          await AsyncStorage.removeItem(REMEMBER_ME_KEY);
         }
       } catch (error) {
         console.warn('AuthContext: Failed to load auth state:', error);
         await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+        await AsyncStorage.removeItem(REMEMBER_ME_KEY);
       } finally {
         setIsLoading(false);
       }
@@ -95,23 +111,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loadAuthState();
   }, []);
 
-  // Save auth state to storage whenever it changes
+  // Save auth state to storage whenever it changes (only if rememberMe is true)
+  // Note: Direct saves in signIn/signInWithGoogle/verifyMfa handle the initial save/clear
+  // This useEffect only handles updates to existing auth state (e.g., user profile updates)
   useEffect(() => {
     const saveAuthState = async () => {
       if (!isLoading) {
         try {
-          if (authState.isAuthenticated) {
+          if (authState.isAuthenticated && rememberMe) {
+            // Only save if rememberMe is true (updates to existing saved state)
             await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authState));
-          } else {
+            await AsyncStorage.setItem(REMEMBER_ME_KEY, 'true');
+          } else if (!authState.isAuthenticated) {
+            // Only clear when explicitly logged out
             await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+            await AsyncStorage.removeItem(REMEMBER_ME_KEY);
           }
+          // If rememberMe is false but authenticated, don't do anything here
+          // (the signIn function already handled clearing the storage)
         } catch (error) {
           console.warn('Failed to save auth state:', error);
         }
       }
     };
     saveAuthState();
-  }, [authState, isLoading]);
+  }, [authState, isLoading, rememberMe]);
 
   // Helper function to map UserDTO to AuthUser
   const mapUserDTOToAuthUser = (userDTO: any): AuthUser | null => {
@@ -159,7 +183,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   };
 
-  const signIn = async (userName: string, password: string) => {
+  const signIn = async (userName: string, password: string, rememberMeParam: boolean = false) => {
     try {
       console.log('AuthContext: Starting login for:', userName);
       const response = await movieAppApi.login(userName, password);
@@ -218,7 +242,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   null;
 
             // Store pending login to be completed by verifyMfa
-            setPendingLogin({ ...loginData, mfaTicket });
+            // Also store rememberMe preference for when MFA is verified
+            setPendingLogin({ ...loginData, mfaTicket, rememberMe: rememberMeParam });
+            setRememberMe(rememberMeParam);
             setAuthState(prev => ({
               ...prev,
               requiresMfa: true,
@@ -276,6 +302,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         }
 
+        // Set remember me preference
+        setRememberMe(rememberMeParam);
+        
         const newAuthState = {
           isAuthenticated: true,
           user: userData,
@@ -290,9 +319,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           hasUser: !!newAuthState.user,
           userId: newAuthState.user?.userID,
           userName: newAuthState.user?.userName,
+          rememberMe: rememberMeParam,
         });
         
         setAuthState(newAuthState);
+        
+        // Save auth state directly based on rememberMe preference
+        if (rememberMeParam) {
+          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newAuthState));
+          await AsyncStorage.setItem(REMEMBER_ME_KEY, 'true');
+        } else {
+          await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+        }
+        
         return { success: true };
       } else {
         console.error('AuthContext: Login failed:', response.errorMessage);
@@ -310,10 +350,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const googleSignIn = async (googleToken: string) => {
+  const signInWithGoogle = async () => {
     try {
       console.log('AuthContext: Starting Google login');
-      const response = await filmzoneApi.googleLogin(googleToken);
+      console.log('AuthContext: filmzoneApi object:', filmzoneApi);
+      console.log('AuthContext: loginWithGoogle method exists:', typeof filmzoneApi.loginWithGoogle);
+      const response = await filmzoneApi.loginWithGoogle();
       
       console.log('AuthContext: Google login response:', JSON.stringify(response, null, 2));
       
@@ -321,6 +363,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const loginData = response.data;
         console.log('AuthContext: Google login data:', JSON.stringify(loginData, null, 2));
         
+        // Handle different response formats from API
         const token = (loginData as any).accessToken || (loginData as any).token;
         const refreshToken = loginData.refreshToken;
         
@@ -337,10 +380,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         filmzoneApi.setToken(token);
         console.log('AuthContext: Token set in API client');
         
-        // Google login typically doesn't require MFA, but check just in case
+        // Check for MFA requirement (only if user object exists in response)
         const userFromResponse = (loginData as any).user;
+        const userTwoFactor = userFromResponse?.twoFactorEnabled;
         
-        // Login successful - get user info from API
+        if (userTwoFactor) {
+          // Start TOTP MFA flow via backend
+          try {
+            const startMfaRes = await filmzoneApi.startTotpMfa();
+            const ok =
+              (startMfaRes as any).success === true ||
+              (startMfaRes.errorCode >= 200 && startMfaRes.errorCode < 300);
+
+            if (!ok || !startMfaRes.data) {
+              console.error('AuthContext: Failed to start TOTP MFA:', startMfaRes.errorMessage);
+              return {
+                success: false,
+                error: startMfaRes.errorMessage || 'Failed to start MFA. Please try again.',
+              };
+            }
+
+            const mfaTicket =
+              typeof startMfaRes.data === 'string'
+                ? startMfaRes.data
+                : (startMfaRes.data as any).ticket ||
+                  (startMfaRes.data as any).mfaTicket ||
+                  (startMfaRes.data as any).sessionId ||
+                  null;
+
+            // Store pending login to be completed by verifyMfa
+            // For Google sign-in, default rememberMe to false (can be changed later if needed)
+            setPendingLogin({ ...loginData, mfaTicket, rememberMe: false });
+            setRememberMe(false);
+            setAuthState(prev => ({
+              ...prev,
+              requiresMfa: true,
+              mfaTicket: mfaTicket,
+            }));
+
+            return {
+              success: false,
+              requiresMfa: true,
+              mfaTicket,
+            };
+          } catch (err) {
+            console.error('AuthContext: Exception while starting TOTP MFA:', err);
+            return {
+              success: false,
+              error: 'Failed to start MFA. Please check your connection and try again.',
+            };
+          }
+        }
+        
+        // Login successful - always get user info from API since real API doesn't return user in login response
         console.log('AuthContext: Google login successful, fetching user data...');
         
         let userData: AuthUser | null = null;
@@ -377,6 +469,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         }
 
+        // Google sign-in defaults to rememberMe = false
+        const googleRememberMe = false;
+        setRememberMe(googleRememberMe);
+        
         const newAuthState = {
           isAuthenticated: true,
           user: userData,
@@ -394,6 +490,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
         
         setAuthState(newAuthState);
+        
+        // Google sign-in doesn't save credentials (rememberMe = false)
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+        await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+        
         return { success: true };
       } else {
         console.error('AuthContext: Google login failed:', response.errorMessage);
@@ -464,14 +565,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, error: 'Unable to retrieve user data' };
       }
 
-      setAuthState({
+      // Restore rememberMe preference from pending login
+      const rememberMeFromPending = (pendingLogin as any)?.rememberMe ?? false;
+      setRememberMe(rememberMeFromPending);
+
+      const newAuthState = {
         isAuthenticated: true,
         user: userData,
         token: loginData.token,
         refreshToken: loginData.refreshToken,
         requiresMfa: false,
         mfaTicket: null,
-      });
+      };
+
+      setAuthState(newAuthState);
+      
+      // Save auth state directly based on rememberMe preference from pending login
+      if (rememberMeFromPending) {
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newAuthState));
+        await AsyncStorage.setItem(REMEMBER_ME_KEY, 'true');
+      } else {
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+        await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+      }
+      
       setPendingLogin(null);
       return { success: true };
     } catch (error) {
@@ -494,7 +611,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       filmzoneApi.setToken(null);
       // Clear auth state and storage
       setAuthState(defaultAuthState);
+      setRememberMe(false);
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      await AsyncStorage.removeItem(REMEMBER_ME_KEY);
     }
   };
 
@@ -547,7 +666,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     <AuthContext.Provider value={{
       authState,
       signIn,
-      googleSignIn,
+      signInWithGoogle,
       verifyMfa,
       signOut,
       updateUser,

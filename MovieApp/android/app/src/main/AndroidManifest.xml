@@ -28,12 +28,6 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="movieapp"/>
       </intent-filter>
-      <intent-filter android:autoVerify="true" data-generated="true">
-        <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="com.googleusercontent.apps.116900779607-n832rt7av55nt2ahcc3se1i8r0ik8thp"/>
-        <category android:name="android.intent.category.BROWSABLE"/>
-        <category android:name="android.intent.category.DEFAULT"/>
-      </intent-filter>
     </activity>
   </application>
 </manifest>

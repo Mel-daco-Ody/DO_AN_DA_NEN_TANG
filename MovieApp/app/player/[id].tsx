@@ -26,6 +26,9 @@ export default function VideoPlayerScreen() {
   const [videoUri, setVideoUri] = useState<string>('');
   const [isLoadingVideo, setIsLoadingVideo] = useState(true);
   const [subtitles, setSubtitles] = useState<any[]>([]);
+  const [availableSubtitles, setAvailableSubtitles] = useState<any[]>([]);
+  const [subtitleTexts, setSubtitleTexts] = useState<Map<string, any[]>>(new Map());
+  const [currentSubtitleText, setCurrentSubtitleText] = useState<string>('');
   const [currentSourceId, setCurrentSourceId] = useState<number | undefined>(undefined);
   const [currentEpisodeSourceId, setCurrentEpisodeSourceId] = useState<number | undefined>(undefined);
   const [videoError, setVideoError] = useState<boolean>(false);
@@ -47,7 +50,8 @@ export default function VideoPlayerScreen() {
   const [volume, setVolume] = useState(1.0);
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
-  const [selectedSubtitle, setSelectedSubtitle] = useState('Vietnamese');
+  const [selectedSubtitle, setSelectedSubtitle] = useState<string>('off');
+  const [selectedSubtitleLanguage, setSelectedSubtitleLanguage] = useState<string>('');
   const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -103,6 +107,433 @@ export default function VideoPlayerScreen() {
     }
   };
 
+  // Parse SRT subtitle format
+  const parseSRT = (srtContent: string): any[] => {
+    const subtitles: any[] = [];
+    
+    // Split by double newlines (more flexible)
+    const blocks = srtContent.split(/\r?\n\s*\r?\n/);
+    
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      
+      const lines = block.trim().split(/\r?\n/).filter(line => line.trim());
+      if (lines.length < 2) continue;
+      
+      // Find time line (usually line 1, but could be line 0 or 1)
+      let timeLine = '';
+      let textStartIndex = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        // Check if line contains time pattern
+        if (line.match(/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/)) {
+          timeLine = line;
+          textStartIndex = i + 1;
+          break;
+        }
+      }
+      
+      if (!timeLine) continue;
+      
+      // Match time with both comma and dot separators
+      const timeMatch = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+      if (!timeMatch) continue;
+      
+      const startTime = 
+        parseInt(timeMatch[1]) * 3600 * 1000 +
+        parseInt(timeMatch[2]) * 60 * 1000 +
+        parseInt(timeMatch[3]) * 1000 +
+        parseInt(timeMatch[4]);
+      
+      const endTime = 
+        parseInt(timeMatch[5]) * 3600 * 1000 +
+        parseInt(timeMatch[6]) * 60 * 1000 +
+        parseInt(timeMatch[7]) * 1000 +
+        parseInt(timeMatch[8]);
+      
+      // Get all text lines after time line
+      const text = lines.slice(textStartIndex)
+        .join(' ')
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/\{.*?\}/g, '') // Remove style tags like {font}
+        .trim();
+      
+      if (text && startTime >= 0 && endTime > startTime) {
+        subtitles.push({ startTime, endTime, text });
+      }
+    }
+    
+    return subtitles.sort((a, b) => a.startTime - b.startTime);
+  };
+
+  // Parse VTT subtitle format
+  const parseVTT = (vttContent: string): any[] => {
+    const subtitles: any[] = [];
+    const lines = vttContent.split('\n');
+    let currentSubtitle: any = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Match time line: 00:00:00.000 --> 00:00:05.000
+      const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+      if (timeMatch) {
+        if (currentSubtitle && currentSubtitle.text) {
+          subtitles.push(currentSubtitle);
+        }
+        
+        const startTime = 
+          parseInt(timeMatch[1]) * 3600 * 1000 +
+          parseInt(timeMatch[2]) * 60 * 1000 +
+          parseInt(timeMatch[3]) * 1000 +
+          parseInt(timeMatch[4]);
+        
+        const endTime = 
+          parseInt(timeMatch[5]) * 3600 * 1000 +
+          parseInt(timeMatch[6]) * 60 * 1000 +
+          parseInt(timeMatch[7]) * 1000 +
+          parseInt(timeMatch[8]);
+        
+        currentSubtitle = { startTime, endTime, text: '' };
+      } else if (currentSubtitle && line && !line.startsWith('WEBVTT') && !line.startsWith('NOTE')) {
+        currentSubtitle.text += (currentSubtitle.text ? ' ' : '') + line.replace(/<[^>]*>/g, '').trim();
+      }
+    }
+    
+    if (currentSubtitle && currentSubtitle.text) {
+      subtitles.push(currentSubtitle);
+    }
+    
+    return subtitles.sort((a, b) => a.startTime - b.startTime);
+  };
+
+  // Load subtitle file from URL
+  const loadSubtitleFile = async (url: string): Promise<any[]> => {
+    try {
+      const response = await fetch(url);
+      const text = await response.text();
+      
+      console.log('VideoPlayerScreen: loadSubtitleFile - file loaded, length:', text.length, 'first 200 chars:', text.substring(0, 200));
+      
+      if (url.endsWith('.vtt') || text.includes('WEBVTT')) {
+        const parsed = parseVTT(text);
+        console.log('VideoPlayerScreen: loadSubtitleFile - VTT parsed, entries:', parsed.length);
+        return parsed;
+      } else {
+        const parsed = parseSRT(text);
+        console.log('VideoPlayerScreen: loadSubtitleFile - SRT parsed, entries:', parsed.length);
+        return parsed;
+      }
+    } catch (error) {
+      console.error('VideoPlayerScreen: Error loading subtitle file:', error);
+      return [];
+    }
+  };
+
+  // Load subtitles from API - supports both movies and episodes
+  // This function is designed to be non-blocking and should never throw errors
+  const loadSubtitles = async (sourceID: number | string, isEpisode: boolean = false): Promise<void> => {
+    try {
+      if (!sourceID) {
+        console.log('VideoPlayerScreen: loadSubtitles - no sourceID provided');
+        return;
+      }
+      
+      // Convert sourceID to number - handle both number and string cases
+      let numericSourceId: number;
+      if (typeof sourceID === 'number') {
+        numericSourceId = sourceID;
+      } else if (typeof sourceID === 'string') {
+        // If it's a pure number string, parse it directly
+        const parsed = parseInt(sourceID, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          numericSourceId = parsed;
+        } else {
+          // Try to extract number from string (e.g., "avengers-infinity-war-1" -> 1)
+          // But this is not ideal - we should have the numeric ID from the source object
+          const numMatch = sourceID.match(/\d+/);
+          if (numMatch) {
+            numericSourceId = parseInt(numMatch[0], 10);
+          } else {
+            console.log('VideoPlayerScreen: loadSubtitles - cannot extract number from sourceID string:', sourceID);
+            return;
+          }
+        }
+      } else {
+        numericSourceId = parseInt(String(sourceID), 10);
+      }
+      
+      if (isNaN(numericSourceId) || numericSourceId <= 0) {
+        console.log('VideoPlayerScreen: loadSubtitles - invalid sourceID, cannot convert to number:', sourceID);
+        return;
+      }
+      
+      console.log('VideoPlayerScreen: loadSubtitles - loading subtitles for sourceID:', sourceID, '-> numeric:', numericSourceId, 'isEpisode:', isEpisode);
+      
+      // Check if methods exist
+      console.log('VideoPlayerScreen: filmzoneApi methods check:', {
+        hasGetEpisodeSubtitles: typeof filmzoneApi.getEpisodeSubtitlesBySourceID,
+        hasGetMovieSubtitles: typeof filmzoneApi.getMovieSubtitlesBySourceID,
+        filmzoneApiKeys: Object.keys(filmzoneApi).filter(k => k.includes('Subtitle') || k.includes('subtitle'))
+      });
+      
+      // Use different API endpoint for movies vs episodes
+      const response = isEpisode 
+        ? await filmzoneApi.getEpisodeSubtitlesBySourceID(numericSourceId)
+        : await filmzoneApi.getMovieSubtitlesBySourceID(numericSourceId);
+      console.log('VideoPlayerScreen: loadSubtitles - API response:', response);
+      
+      // Handle both cases: data is array or single object, and empty array
+      if (response.errorCode >= 200 && response.errorCode < 300) {
+        // If data is empty array or undefined, just log and return (no subtitles available)
+        // This is normal and should not affect video playback
+        if (!response.data || (Array.isArray(response.data) && response.data.length === 0)) {
+          console.log('VideoPlayerScreen: loadSubtitles - no subtitles available for this source (this is OK, video will still play)');
+          setAvailableSubtitles([]);
+          setSubtitleTexts(new Map());
+          setSelectedSubtitle('off');
+          setSelectedSubtitleLanguage('');
+          setShowSubtitles(false);
+          return; // Exit early if no subtitles - this is normal
+        }
+        
+        const subtitlesData = Array.isArray(response.data) ? response.data : [response.data];
+        const activeSubtitles = subtitlesData.filter((s: any) => s.isActive !== false);
+        
+        console.log('VideoPlayerScreen: loadSubtitles - active subtitles:', activeSubtitles.length);
+        setAvailableSubtitles(activeSubtitles);
+        
+        // Load subtitle files - use a consistent key (language or subTitleName)
+        // Wrap in try-catch to handle individual file load errors
+        const subtitleTextsMap = new Map<string, any[]>();
+        for (const subtitle of activeSubtitles) {
+          if (subtitle.linkSubTitle) {
+            try {
+              console.log('VideoPlayerScreen: loadSubtitles - loading subtitle file:', subtitle.linkSubTitle);
+              const parsed = await loadSubtitleFile(subtitle.linkSubTitle);
+              console.log('VideoPlayerScreen: loadSubtitles - parsed subtitle entries:', parsed.length);
+              if (parsed.length > 0) {
+                console.log('VideoPlayerScreen: loadSubtitles - first entry sample:', {
+                  startTime: parsed[0].startTime,
+                  endTime: parsed[0].endTime,
+                  startSeconds: Math.floor(parsed[0].startTime / 1000),
+                  endSeconds: Math.floor(parsed[0].endTime / 1000),
+                  text: parsed[0].text?.substring(0, 50)
+                });
+              }
+              // Use language as key, fallback to subTitleName
+              const key = subtitle.language || subtitle.subTitleName || 'unknown';
+              subtitleTextsMap.set(key, parsed);
+            } catch (fileError) {
+              // If one subtitle file fails to load, continue with others
+              console.error('VideoPlayerScreen: Error loading subtitle file (non-critical):', subtitle.linkSubTitle, fileError);
+            }
+          }
+        }
+        
+        console.log('VideoPlayerScreen: loadSubtitles - subtitleTextsMap keys:', Array.from(subtitleTextsMap.keys()));
+        setSubtitleTexts(subtitleTextsMap);
+        
+        // Auto-select first available subtitle with valid language (prioritize vi, en over "string")
+        if (activeSubtitles.length > 0 && subtitleTextsMap.size > 0) {
+          // Find subtitle with valid language (vi, en, etc.) that has parsed entries
+          const validLanguageCodes = ['vi', 'en', 'zh', 'ja', 'ko', 'th', 'fr', 'de', 'es'];
+          let selectedSubtitle = null;
+          
+          // First, try to find subtitle with valid language code that has parsed entries
+          for (const subtitle of activeSubtitles) {
+            const lang = subtitle.language?.toLowerCase();
+            if (lang && validLanguageCodes.includes(lang)) {
+              const langKey = subtitle.language || subtitle.subTitleName || 'unknown';
+              const parsed = subtitleTextsMap.get(langKey);
+              if (parsed && parsed.length > 0) {
+                selectedSubtitle = subtitle;
+                break;
+              }
+            }
+          }
+          
+          // If no valid language found, find any subtitle with parsed entries
+          if (!selectedSubtitle) {
+            for (const subtitle of activeSubtitles) {
+              const langKey = subtitle.language || subtitle.subTitleName || 'unknown';
+              const parsed = subtitleTextsMap.get(langKey);
+              if (parsed && parsed.length > 0) {
+                selectedSubtitle = subtitle;
+                break;
+              }
+            }
+          }
+          
+          // Fallback to first subtitle if none found
+          if (!selectedSubtitle) {
+            selectedSubtitle = activeSubtitles[0];
+          }
+          
+          const langKey = selectedSubtitle.language || selectedSubtitle.subTitleName || 'unknown';
+          const langCode = selectedSubtitle.language?.toLowerCase() || 'vi';
+          console.log('VideoPlayerScreen: loadSubtitles - auto-selecting subtitle:', { 
+            langKey, 
+            langCode, 
+            subtitle: selectedSubtitle,
+            hasParsedEntries: subtitleTextsMap.get(langKey)?.length || 0
+          });
+          setSelectedSubtitle(langCode);
+          setSelectedSubtitleLanguage(langKey);
+          setShowSubtitles(true);
+        } else {
+          // No subtitles with valid entries, disable subtitles
+          console.log('VideoPlayerScreen: loadSubtitles - no subtitles with valid entries found');
+          setSelectedSubtitle('off');
+          setSelectedSubtitleLanguage('');
+          setShowSubtitles(false);
+        }
+      } else {
+        // API error - this is OK, video will still play
+        console.log('VideoPlayerScreen: loadSubtitles - API error (non-critical, video will still play):', response.errorCode, response.errorMessage);
+        setAvailableSubtitles([]);
+        setSubtitleTexts(new Map());
+        setSelectedSubtitle('off');
+        setSelectedSubtitleLanguage('');
+        setShowSubtitles(false);
+      }
+    } catch (error) {
+      // Catch all errors - subtitles are optional, video should still play
+      console.error('VideoPlayerScreen: Error loading subtitles (non-critical, video will still play):', error);
+      setAvailableSubtitles([]);
+      setSubtitleTexts(new Map());
+      setSelectedSubtitle('off');
+      setSelectedSubtitleLanguage('');
+      setShowSubtitles(false);
+    }
+  };
+
+  // Get current subtitle text based on time
+  const getCurrentSubtitleText = (currentTimeMillis: number): string => {
+    if (!showSubtitles || selectedSubtitle === 'off') {
+      return '';
+    }
+    
+    // If no subtitle texts loaded, return empty
+    if (subtitleTexts.size === 0) {
+      return '';
+    }
+    
+    // Try to find subtitle list by selected language key first
+    let subtitleList = null;
+    let searchKey = selectedSubtitleLanguage;
+    
+    // Debug: log all available keys
+    const allKeys = Array.from(subtitleTexts.keys());
+    
+    // If we have a selected language key, try to get it directly
+    if (searchKey) {
+      subtitleList = subtitleTexts.get(searchKey);
+      if (!subtitleList) {
+        // Try exact match case-insensitive
+        for (const [key, value] of subtitleTexts.entries()) {
+          if (key.toLowerCase() === searchKey.toLowerCase()) {
+            subtitleList = value;
+            searchKey = key;
+            break;
+          }
+        }
+      }
+    }
+    
+    // If not found, try to find by matching language code
+    if (!subtitleList) {
+      for (const [key, value] of subtitleTexts.entries()) {
+        const keyLower = key.toLowerCase();
+        // Match by language code (e.g., "vi", "en") or by key containing the code
+        if (keyLower === selectedSubtitle || 
+            keyLower.includes(selectedSubtitle) || 
+            selectedSubtitle.includes(keyLower)) {
+          subtitleList = value;
+          searchKey = key;
+          // Update selected language if we found a match and it's different
+          if (searchKey !== selectedSubtitleLanguage) {
+            setSelectedSubtitleLanguage(searchKey);
+          }
+          break;
+        }
+      }
+    }
+    
+    // If still not found, use first available subtitle with entries
+    if (!subtitleList) {
+      for (const [key, value] of subtitleTexts.entries()) {
+        if (value && value.length > 0) {
+          subtitleList = value;
+          searchKey = key;
+          setSelectedSubtitleLanguage(searchKey);
+          break;
+        }
+      }
+    }
+    
+    if (!subtitleList || subtitleList.length === 0) {
+      // Debug log when subtitle list not found
+      if (currentTimeMillis % 5000 < 500) {
+        console.log('VideoPlayerScreen: getCurrentSubtitleText - no subtitle list found', {
+          selectedSubtitle,
+          selectedSubtitleLanguage,
+          searchKey,
+          allKeys,
+          subtitleTextsSize: subtitleTexts.size,
+          subtitleTextsEntries: Array.from(subtitleTexts.entries()).map(([k, v]) => ({ key: k, length: v.length }))
+        });
+      }
+      return '';
+    }
+    
+    // Find subtitle that matches current time
+    const currentSubtitle = subtitleList.find(
+      (sub: any) => currentTimeMillis >= sub.startTime && currentTimeMillis <= sub.endTime
+    );
+    
+    // Debug log when no subtitle matches time (log more frequently for debugging)
+    if (!currentSubtitle && currentTimeMillis % 5000 < 500) {
+      console.log('VideoPlayerScreen: getCurrentSubtitleText - no subtitle matches time', {
+        currentTimeMillis,
+        currentTimeSeconds: Math.floor(currentTimeMillis / 1000),
+        searchKey,
+        subtitleListLength: subtitleList.length,
+        firstSubtitle: subtitleList[0] ? {
+          startTime: subtitleList[0].startTime,
+          endTime: subtitleList[0].endTime,
+          startSeconds: Math.floor(subtitleList[0].startTime / 1000),
+          endSeconds: Math.floor(subtitleList[0].endTime / 1000),
+          text: subtitleList[0].text?.substring(0, 50)
+        } : null,
+        lastSubtitle: subtitleList[subtitleList.length - 1] ? {
+          startTime: subtitleList[subtitleList.length - 1].startTime,
+          endTime: subtitleList[subtitleList.length - 1].endTime,
+          startSeconds: Math.floor(subtitleList[subtitleList.length - 1].startTime / 1000),
+          endSeconds: Math.floor(subtitleList[subtitleList.length - 1].endTime / 1000)
+        } : null,
+        // Check if current time is before first subtitle or after last subtitle
+        isBeforeFirst: subtitleList[0] ? currentTimeMillis < subtitleList[0].startTime : false,
+        isAfterLast: subtitleList[subtitleList.length - 1] ? currentTimeMillis > subtitleList[subtitleList.length - 1].endTime : false
+      });
+    }
+    
+    return currentSubtitle ? currentSubtitle.text : '';
+  };
+
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('VideoPlayerScreen: state changed', {
+      isLoadingVideo,
+      videoError,
+      requiresSubscription,
+      videoUri: videoUri ? videoUri.substring(0, 50) + '...' : '',
+      type,
+      episode
+    });
+  }, [isLoadingVideo, videoError, requiresSubscription, videoUri, type, episode]);
+
   // Load video source from API
   useEffect(() => {
     const loadVideoSource = async () => {
@@ -113,6 +544,13 @@ export default function VideoPlayerScreen() {
         setHasPlayedOnce(false); // Reset wave animation for new video
         setIsBuffering(false); // Reset buffering state for new video
         setIsInitialBuffering(false); // Reset initial buffering state for new video
+        // Reset subtitles
+        setAvailableSubtitles([]);
+        setSubtitleTexts(new Map());
+        setCurrentSubtitleText('');
+        setSelectedSubtitle('off');
+        setSelectedSubtitleLanguage('');
+        setShowSubtitles(false);
         
         // Start interval to update loading time every 10 seconds
         loadingIntervalRef.current = setInterval(() => {
@@ -124,17 +562,34 @@ export default function VideoPlayerScreen() {
         if (type === 'series' && episode) {
           // Load episode source
           const episodeId = parseInt(episode as string);
+          console.log('VideoPlayerScreen: loading episode sources for episodeId:', episodeId);
           const sourcesResponse = await filmzoneApi.getEpisodeSourcesByEpisodeId(episodeId);
+          console.log('VideoPlayerScreen: episode sources response:', {
+            errorCode: sourcesResponse.errorCode,
+            hasData: !!sourcesResponse.data,
+            dataLength: Array.isArray(sourcesResponse.data) ? sourcesResponse.data.length : 0,
+            data: sourcesResponse.data
+          });
           
           if (sourcesResponse.errorCode >= 200 && sourcesResponse.errorCode < 300 && sourcesResponse.data && sourcesResponse.data.length > 0) {
             // Get the first active source (or VIP source if user is VIP)
             const activeSources = sourcesResponse.data.filter((s: any) => s.isActive);
+            console.log('VideoPlayerScreen: episode - active sources count:', activeSources.length, activeSources);
+            
+            if (activeSources.length === 0) {
+              console.log('VideoPlayerScreen: episode - no active sources found');
+              setVideoError(true);
+              setVideoUri('');
+              setRequiresSubscription(false);
+              return;
+            }
             
             // Check if user has valid VIP subscription
             const hasValidVipSubscription = await checkVipSubscription();
             
             // Find non-VIP source first
             let selectedSource = activeSources.find((s: any) => !s.isVipOnly);
+            console.log('VideoPlayerScreen: episode - selected non-VIP source:', selectedSource);
             
             // If no non-VIP source, check VIP source
             if (!selectedSource) {
@@ -162,20 +617,39 @@ export default function VideoPlayerScreen() {
             }
             
             if (selectedSource?.sourceUrl) {
+              const episodeSourceId = selectedSource.episodeSourceID;
+              console.log('VideoPlayerScreen: episode source selected', {
+                episodeSourceId,
+                sourceUrl: selectedSource.sourceUrl,
+                selectedSource
+              });
               setVideoUri(selectedSource.sourceUrl);
-              setCurrentEpisodeSourceId(selectedSource.episodeSourceID);
+              setCurrentEpisodeSourceId(episodeSourceId);
               setRequiresSubscription(false);
+              setVideoError(false);
               bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
+              // Load subtitles for this episode source (don't await - load in background)
+              if (episodeSourceId) {
+                loadSubtitles(episodeSourceId, true).catch(err => {
+                  console.error('VideoPlayerScreen: Error loading episode subtitles (non-blocking):', err);
+                });
+              }
               // Video will start loading in chunks automatically via HTTP Range requests
               // expo-av handles progressive loading natively
             } else {
               // No valid source found - show 404 error
+              console.log('VideoPlayerScreen: episode - no valid sourceUrl found', { selectedSource });
               setVideoError(true);
               setVideoUri('');
               setRequiresSubscription(false);
             }
           } else {
             // No sources found - show 404 error
+            console.log('VideoPlayerScreen: episode - API response not OK or no data', {
+              errorCode: sourcesResponse.errorCode,
+              hasData: !!sourcesResponse.data,
+              dataLength: Array.isArray(sourcesResponse.data) ? sourcesResponse.data.length : 'not array'
+            });
             setVideoError(true);
             setVideoUri('');
             setRequiresSubscription(false);
@@ -226,10 +700,27 @@ export default function VideoPlayerScreen() {
               }
 
               if (selectedSource?.sourceUrl) {
+                // Prioritize movieSourceID over sourceID, and ensure it's a number
+                const sourceIdRaw = (selectedSource as any).movieSourceID || (selectedSource as any).sourceID;
+                console.log('VideoPlayerScreen: selected source for subtitle loading', { 
+                  selectedSource, 
+                  movieSourceID: (selectedSource as any).movieSourceID,
+                  sourceID: (selectedSource as any).sourceID,
+                  sourceIdRaw 
+                });
+                
                 setVideoUri(selectedSource.sourceUrl);
-                setCurrentSourceId((selectedSource as any).sourceID || (selectedSource as any).movieSourceID);
+                setCurrentSourceId(sourceIdRaw);
                 setRequiresSubscription(false);
+                setVideoError(false); // Ensure video error is cleared
                 bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
+                // Load subtitles for this movie source (don't await - load in background)
+                // Subtitles are optional - video will play even if subtitle loading fails
+                if (sourceIdRaw) {
+                  loadSubtitles(sourceIdRaw, false).catch(err => {
+                    console.error('VideoPlayerScreen: Error loading movie subtitles (non-blocking, video will still play):', err);
+                  });
+                }
                 // Video will start loading in chunks automatically via HTTP Range requests
                 // expo-av handles progressive loading natively
               } else {
@@ -262,6 +753,12 @@ export default function VideoPlayerScreen() {
           clearInterval(loadingIntervalRef.current);
           loadingIntervalRef.current = null;
         }
+        console.log('VideoPlayerScreen: loadVideoSource finally - setting isLoadingVideo to false', {
+          videoUri,
+          videoError,
+          requiresSubscription,
+          type
+        });
         setIsLoadingVideo(false);
         setLoadingElapsedSeconds(0);
       }
@@ -438,19 +935,40 @@ export default function VideoPlayerScreen() {
   const handlePlaybackStatusUpdate = (playbackStatus: AVPlaybackStatus) => {
     setStatus(playbackStatus);
     if (playbackStatus.isLoaded) {
-      setCurrentTime(playbackStatus.positionMillis || 0);
+      const currentTimeMillis = playbackStatus.positionMillis || 0;
+      setCurrentTime(currentTimeMillis);
       setDuration(playbackStatus.durationMillis || 0);
+      
+      // Update current subtitle text - only if subtitles are enabled
+      if (showSubtitles && selectedSubtitle !== 'off') {
+        const subtitleText = getCurrentSubtitleText(currentTimeMillis);
+        setCurrentSubtitleText(subtitleText);
+        // Debug log occasionally to track subtitle updates
+        if (currentTimeMillis % 5000 < 500) { // Log roughly every 5 seconds
+          console.log('VideoPlayerScreen: subtitle update', {
+            currentTime: Math.floor(currentTimeMillis / 1000),
+            subtitleText: subtitleText.substring(0, 50),
+            selectedSubtitle,
+            selectedSubtitleLanguage,
+            subtitleTextsSize: subtitleTexts.size
+          });
+        }
+      } else {
+        setCurrentSubtitleText('');
+      }
       
       // Check if video is buffering
       const buffering = playbackStatus.isBuffering || false;
       
       // If we're in initial buffering phase and video has enough buffer, end initial buffering
+      // Reduced from 5s to 2s for faster playback start
       if (isInitialBuffering && playbackStatus.durationMillis) {
         const bufferedDuration = playbackStatus.playableDurationMillis || 0;
-        const minBufferSeconds = 5; // Minimum 5 seconds buffer to end initial buffering
+        const minBufferSeconds = 2; // Minimum 2 seconds buffer to end initial buffering (reduced for faster start)
         const minBufferMillis = minBufferSeconds * 1000;
         
-        if (bufferedDuration >= minBufferMillis && !buffering) {
+        // End initial buffering if we have enough buffer OR if video is already playing
+        if ((bufferedDuration >= minBufferMillis && !buffering) || playbackStatus.isPlaying) {
           setIsInitialBuffering(false);
         }
       }
@@ -467,10 +985,10 @@ export default function VideoPlayerScreen() {
       // The player will automatically buffer ahead while playing
       // No need for manual chunk management - expo-av handles it natively
       
-      // Log when buffer is ready (at least 10 seconds buffered)
+      // Log when buffer is ready (at least 5 seconds buffered - reduced for faster feedback)
       if (!bufferReadyLoggedRef.current && playbackStatus.durationMillis) {
         const bufferedDuration = playbackStatus.playableDurationMillis || 0;
-        const minBufferSeconds = 10; // Minimum 10 seconds buffer
+        const minBufferSeconds = 5; // Minimum 5 seconds buffer (reduced from 10s)
         const minBufferMillis = minBufferSeconds * 1000;
         
         if (bufferedDuration >= minBufferMillis) {
@@ -615,8 +1133,51 @@ export default function VideoPlayerScreen() {
   const selectSubtitle = async (language: any) => {
     try {
       await Haptics.selectionAsync();
-      setSelectedSubtitle(language.name);
-      setShowSubtitles(language.code !== 'off');
+      
+      if (language.code === 'off') {
+        setSelectedSubtitle('off');
+        setSelectedSubtitleLanguage('');
+        setShowSubtitles(false);
+      } else {
+        // Find matching subtitle from available subtitles
+        const matchingSubtitle = availableSubtitles.find(
+          (sub: any) => {
+            const subLang = sub.language?.toLowerCase() || '';
+            const subName = sub.subTitleName?.toLowerCase() || '';
+            return subLang === language.code || 
+                   subName.includes(language.code) ||
+                   language.code.includes(subLang);
+          }
+        );
+        
+        if (matchingSubtitle) {
+          const langKey = matchingSubtitle.language || matchingSubtitle.subTitleName || '';
+          setSelectedSubtitle(language.code);
+          setSelectedSubtitleLanguage(langKey);
+          setShowSubtitles(true);
+        } else {
+          // If no matching subtitle found, try to find any subtitle with similar language
+          const fallbackSubtitle = availableSubtitles.find(
+            (sub: any) => {
+              const subLang = sub.language?.toLowerCase() || '';
+              return subLang.startsWith(language.code) || language.code.startsWith(subLang);
+            }
+          );
+          
+          if (fallbackSubtitle) {
+            const langKey = fallbackSubtitle.language || fallbackSubtitle.subTitleName || '';
+            setSelectedSubtitle(language.code);
+            setSelectedSubtitleLanguage(langKey);
+            setShowSubtitles(true);
+          } else {
+            // No matching subtitle found
+            setSelectedSubtitle(language.code);
+            setSelectedSubtitleLanguage('');
+            setShowSubtitles(false);
+          }
+        }
+      }
+      
       setShowSubtitleMenu(false);
       setShowControls(true);
     } catch (error) {
@@ -740,11 +1301,13 @@ export default function VideoPlayerScreen() {
           isLooping={false}
           isMuted={isMuted}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-          progressUpdateIntervalMillis={500}
-          // Optimize buffering - update more frequently for better UX
+          progressUpdateIntervalMillis={250}
+          // Optimize buffering - update more frequently for better UX and faster response
           useNativeControls={false}
           // Enable faster playback start
           shouldCorrectPitch={false}
+          // Optimize for faster buffering
+          resizeMode={ResizeMode.CONTAIN}
           // Start playing when enough buffer is available (default behavior)
           onLoadStart={() => {
             console.log('VideoPlayerScreen: Video load started');
@@ -752,6 +1315,12 @@ export default function VideoPlayerScreen() {
           onLoad={() => {
             console.log('VideoPlayerScreen: Video loaded, ready to play');
             // Video is ready, can start playing
+            // Try to start playing immediately if not already playing
+            if (!isPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(err => {
+                console.log('VideoPlayerScreen: Auto-play on load failed (normal if user interaction required):', err);
+              });
+            }
           }}
         />
       )}
@@ -922,19 +1491,67 @@ export default function VideoPlayerScreen() {
                 {showSubtitleMenu && (
                   <View style={styles.subtitleMenuContainer}>
                     <ScrollView style={styles.subtitleMenu} showsVerticalScrollIndicator={false}>
-                      {subtitleLanguages.map((language) => (
+                      {/* Show available subtitles from API first */}
+                      {availableSubtitles.length > 0 && (
+                        <>
+                          {subtitleLanguages.filter(lang => lang.code === 'off').map((language) => (
+                            <Pressable
+                              key={language.id}
+                              style={({ pressed }) => [
+                                styles.subtitleMenuItem,
+                                selectedSubtitle === language.code && styles.subtitleMenuItemActive,
+                                pressed && { opacity: 0.8 }
+                              ]}
+                              onPress={() => selectSubtitle(language)}
+                            >
+                              <Text style={[
+                                styles.subtitleMenuText,
+                                selectedSubtitle === language.code && styles.subtitleMenuTextActive
+                              ]}>
+                                {language.name}
+                              </Text>
+                            </Pressable>
+                          ))}
+                          {availableSubtitles.map((subtitle: any) => {
+                            const langCode = subtitle.language?.toLowerCase() || 'vi';
+                            const langName = subtitle.subTitleName || subtitle.language || 'Unknown';
+                            const isSelected = selectedSubtitle === langCode && selectedSubtitleLanguage === (subtitle.language || subtitle.subTitleName);
+                            
+                            return (
+                              <Pressable
+                                key={subtitle.movieSubTitleID || subtitle.subTitleName}
+                                style={({ pressed }) => [
+                                  styles.subtitleMenuItem,
+                                  isSelected && styles.subtitleMenuItemActive,
+                                  pressed && { opacity: 0.8 }
+                                ]}
+                                onPress={() => selectSubtitle({ code: langCode, name: langName })}
+                              >
+                                <Text style={[
+                                  styles.subtitleMenuText,
+                                  isSelected && styles.subtitleMenuTextActive
+                                ]}>
+                                  {langName}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </>
+                      )}
+                      {/* Fallback to default languages if no subtitles from API */}
+                      {availableSubtitles.length === 0 && subtitleLanguages.map((language) => (
                         <Pressable
                           key={language.id}
                           style={({ pressed }) => [
                             styles.subtitleMenuItem,
-                            selectedSubtitle === language.name && styles.subtitleMenuItemActive,
+                            selectedSubtitle === language.code && styles.subtitleMenuItemActive,
                             pressed && { opacity: 0.8 }
                           ]}
                           onPress={() => selectSubtitle(language)}
                         >
                           <Text style={[
                             styles.subtitleMenuText,
-                            selectedSubtitle === language.name && styles.subtitleMenuTextActive
+                            selectedSubtitle === language.code && styles.subtitleMenuTextActive
                           ]}>
                             {language.name}
                           </Text>
@@ -971,10 +1588,10 @@ export default function VideoPlayerScreen() {
       )}
 
       {/* Subtitles overlay */}
-      {showSubtitles && (
+      {showSubtitles && selectedSubtitle !== 'off' && currentSubtitleText && (
         <View style={styles.subtitlesContainer}>
           <Text style={styles.subtitlesText}>
-            [{selectedSubtitle}] {formatTime(currentTime)} - Sample subtitle text
+            {currentSubtitleText}
           </Text>
         </View>
       )}

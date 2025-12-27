@@ -1,53 +1,25 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, Pressable, ImageBackground, KeyboardAvoidingView, Platform, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
 export default function SignInScreen() {
-  const { authState, signIn, verifyMfa } = useAuth();
+  const { authState, signIn, signInWithGoogle, verifyMfa } = useAuth();
   const { showError } = useToast();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showMfaModal, setShowMfaModal] = useState(false);
   const [mfaCode, setMfaCode] = useState(['', '', '', '', '', '']);
   const [isVerifyingMfa, setIsVerifyingMfa] = useState(false);
   const mfaInputRefs = useRef<(TextInput | null)[]>([]);
-
-  // Listen for deep links (in case backend redirects to app)
-  useEffect(() => {
-    const subscription = Linking.addEventListener('url', (event) => {
-      const { url } = event;
-      console.log('Deep link received:', url);
-      
-      // Check if this is Google OAuth callback
-      if (url.includes('movieapp://auth/google/callback') || url.includes('auth/google/callback')) {
-        // Navigate to callback screen which will handle the login
-        router.push('/auth/google/callback');
-      }
-    });
-
-    // Check if app was opened via deep link
-    Linking.getInitialURL().then((url) => {
-      if (url && (url.includes('movieapp://auth/google/callback') || url.includes('auth/google/callback'))) {
-        router.push('/auth/google/callback');
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
   
   const goSignUp = async () => { try { await Haptics.selectionAsync(); } catch {} router.push('/auth/signup'); };
   const goHome = async () => { try { await Haptics.selectionAsync(); } catch {} router.back(); };
@@ -72,150 +44,6 @@ export default function SignInScreen() {
   const handleMfaKeyPress = (index: number, key: string) => {
     if (key === 'Backspace' && !mfaCode[index] && index > 0) {
       mfaInputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true);
-    try {
-      await Haptics.selectionAsync();
-      
-      // Redirect to backend Google OAuth endpoint
-      // Backend will handle OAuth flow and redirect back to app
-      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'https://filmzone-api.koyeb.app';
-      
-      // Use fixed app scheme - this is what backend should redirect to
-      // Format: scheme://path
-      const redirectUri = 'movieapp://auth/google/callback';
-      
-      // Encode returnUrl properly for URL parameter
-      // Backend MUST use this returnUrl to redirect back to app (not localhost)
-      const returnUrl = encodeURIComponent(redirectUri);
-      
-      // Build Google login URL with returnUrl parameter
-      // IMPORTANT: Backend must detect this is a mobile app request and redirect to returnUrl
-      // If backend redirects to localhost, it means backend is not handling returnUrl correctly
-      // Add 'mobile=true' parameter to help backend identify this is a mobile app request
-      const googleLoginUrl = `${apiBase}/login/google-login?returnUrl=${returnUrl}&mobile=true&platform=react-native`;
-      
-      console.log('=== Google OAuth Debug ===');
-      console.log('Google login URL:', googleLoginUrl);
-      console.log('Redirect URI (returnUrl):', redirectUri);
-      console.log('Encoded returnUrl:', returnUrl);
-      console.log('Expected backend redirect:', redirectUri);
-      console.log('Backend MUST redirect to:', redirectUri);
-      console.log('If backend redirects to localhost, backend needs to be updated');
-      console.log('========================');
-      
-      // Open browser for OAuth flow
-      // When backend redirects to movieapp://auth/google/callback, 
-      // Expo Router will automatically navigate to the callback screen
-      // If backend redirects to localhost, deep link listener will catch it
-      const result = await WebBrowser.openAuthSessionAsync(
-        googleLoginUrl,
-        redirectUri
-      );
-      
-      console.log('WebBrowser result type:', result.type);
-      let resultUrl = '';
-      if (result.type === 'success' && 'url' in result) {
-        resultUrl = result.url;
-        console.log('WebBrowser result URL:', resultUrl);
-      }
-
-      // If result.type === 'success', check if backend redirected correctly
-      if (result.type === 'success') {
-        // Check if backend redirected to app scheme (correct)
-        if (resultUrl.includes('movieapp://') || resultUrl.includes('auth/google/callback')) {
-          console.log('Backend redirected to app scheme - callback screen will handle');
-          // Callback screen will handle login verification
-        } 
-        // Backend redirected to localhost/web URL (incorrect, but we can try to handle it)
-        else if (resultUrl.includes('localhost') || resultUrl.includes('http://') || resultUrl.includes('https://')) {
-          console.log('Backend redirected to web URL instead of app scheme');
-          console.log('Attempting to extract token or handle redirect...');
-          
-          // Try to extract token from URL hash or params
-          let token: string | null = null;
-          try {
-            // Try to parse URL
-            const url = new URL(resultUrl);
-            token = url.searchParams.get('token') || url.hash.split('token=')[1]?.split('&')[0];
-          } catch {
-            // If URL parsing fails, try regex
-            const tokenMatch = resultUrl.match(/[?&#]token=([^&]+)/);
-            token = tokenMatch ? tokenMatch[1] : null;
-          }
-          
-          if (token) {
-            // Token found in URL, set it and verify login
-            console.log('Token found in redirect URL');
-            try {
-              const { filmzoneApi } = await import('../../services/filmzone-api');
-              filmzoneApi.setToken(token);
-              
-              const userResponse = await filmzoneApi.getCurrentUser();
-              if (userResponse.errorCode === 200 && userResponse.data) {
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                router.replace('/');
-                return;
-              }
-            } catch (error) {
-              console.error('Error setting token from redirect:', error);
-            }
-          }
-          
-          // If no token in URL, backend might have set cookie
-          // Try to verify login by calling refresh or getCurrentUser
-          try {
-            const { filmzoneApi } = await import('../../services/filmzone-api');
-            
-            // Try refresh endpoint first
-            const refreshResponse = await filmzoneApi.refreshAccessToken();
-            if (refreshResponse.success && refreshResponse.data?.token) {
-              const userResponse = await filmzoneApi.getCurrentUser();
-              if (userResponse.errorCode === 200 && userResponse.data) {
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                router.replace('/');
-                return;
-              }
-            }
-            
-            // Try getCurrentUser (cookie might be set)
-            const userResponse = await filmzoneApi.getCurrentUser();
-            if (userResponse.errorCode === 200 && userResponse.data) {
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              router.replace('/');
-              return;
-            }
-            
-            // If all fails, show error
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            showError('Google sign in failed. Backend redirected to web URL instead of app.');
-            console.error('Backend redirected to:', resultUrl);
-            console.error('Expected redirect to: movieapp://auth/google/callback');
-          } catch (error) {
-            console.error('Error verifying login after redirect:', error);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            showError('Google sign in failed. Please try again.');
-          }
-        } else {
-          // Unknown redirect, try to handle it
-          console.log('Unknown redirect format, attempting to handle...');
-        }
-      } else if (result.type === 'cancel') {
-        // User cancelled
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      } else {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        showError('Google sign in failed');
-      }
-    } catch (error) {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showError('An error occurred during Google sign in');
-      console.error('Google sign in error:', error);
-    } finally {
-      setIsGoogleLoading(false);
     }
   };
 
@@ -312,7 +140,7 @@ export default function SignInScreen() {
               try {
                 await Haptics.selectionAsync();
                 
-                const result = await signIn(userName.trim(), password);
+                const result = await signIn(userName.trim(), password, remember);
                 
                 if (result.success) {
                   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -335,7 +163,7 @@ export default function SignInScreen() {
                 setIsLoading(false);
               }
             }}
-            disabled={isLoading || isGoogleLoading}
+            disabled={isLoading}
           >
             <Text style={styles.signInButtonText}>
               {isLoading ? 'Signing In...' : 'Sign In'}
@@ -343,26 +171,49 @@ export default function SignInScreen() {
           </Pressable>
 
           {/* Divider */}
-          <View style={styles.divider}>
+          <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or login with</Text>
+            <Text style={styles.dividerText}>OR</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Google Sign In Button */}
+          {/* Sign in with Google Button */}
           <Pressable
-            style={[styles.googleButton, (isGoogleLoading || isLoading) && styles.disabledButton]}
-            onPress={handleGoogleSignIn}
-            disabled={isGoogleLoading || isLoading}
+            style={[styles.googleButton, isLoading && styles.disabledButton]}
+            onPress={async () => {
+              setIsLoading(true);
+              try {
+                await Haptics.selectionAsync();
+                
+                const result = await signInWithGoogle();
+                
+                if (result.success) {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  router.replace('/');
+                } else if (result.requiresMfa) {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  setMfaCode(['', '', '', '', '', '']);
+                  setShowMfaModal(true);
+                  setTimeout(() => {
+                    mfaInputRefs.current[0]?.focus();
+                  }, 100);
+                } else {
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                  showError(result.error || 'Google sign in failed');
+                }
+              } catch (error) {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                showError('An error occurred during Google sign in');
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            disabled={isLoading}
           >
-            {isGoogleLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="logo-google" size={20} color="#fff" style={styles.googleIcon} />
-                <Text style={styles.googleButtonText}>Sign in with Google</Text>
-              </>
-            )}
+            <Ionicons name="logo-google" size={20} color="#fff" style={styles.googleIcon} />
+            <Text style={styles.googleButtonText}>
+              {isLoading ? 'Signing In...' : 'Sign in with Google'}
+            </Text>
           </Pressable>
 
           <Pressable onPress={goSignUp}>
@@ -397,28 +248,28 @@ const styles = StyleSheet.create({
   checkboxLabel: { color: '#c7c7cc' },
   signInButton: { backgroundColor: '#e50914', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   signInButtonText: { color: '#fff', fontWeight: '700' },
-  disabledButton: { opacity: 0.6 },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#3a3a3a' },
-  dividerText: { color: '#8e8e93', marginHorizontal: 12, fontSize: 12 },
+  dividerText: { color: '#8e8e93', fontSize: 12, marginHorizontal: 12, fontWeight: '600' },
   googleButton: { 
-    backgroundColor: 'rgba(0, 0, 0, 0.91)', 
+    backgroundColor: 'rgba(0, 0, 0, 0.8)', 
     paddingVertical: 12, 
-    borderRadius: 10, 
+    borderRadius: 10,
+    borderWidth: 1, 
+    borderColor: 'rgba(233, 14, 14, 0.8)',
     alignItems: 'center', 
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 8, 
     shadowColor: '#000', 
     shadowOpacity: 0.25, 
     shadowRadius: 6, 
     shadowOffset: { width: 0, height: 3 }, 
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgb(255, 0, 0)',
+    elevation: 4 
   },
-  googleIcon: { marginRight: 8, color: 'rgb(255, 0, 0)' },
-  googleButtonText: { color: 'rgb(255, 0, 0)', fontWeight: '700', fontSize: 14 },
+  googleIcon: { marginRight: 8, color: 'rgba(233, 14, 14, 0.8)' },
+  googleButtonText: { color: 'rgba(233, 14, 14, 0.8)', fontWeight: '700' },
+  disabledButton: { opacity: 0.6 },
   subText: { color: '#c7c7cc', textAlign: 'center', marginTop: 12 },
   link: { color: '#ffd166', fontWeight: '700' },
 

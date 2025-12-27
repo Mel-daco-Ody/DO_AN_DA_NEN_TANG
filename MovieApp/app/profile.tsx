@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { ListSkeleton } from '../components/SkeletonPlaceholder';
 import { NetworkErrorState, ServerErrorState } from '../components/ErrorState';
 import { AnimatedButton, AnimatedCard } from '../components/AnimatedPressable';
+import { logger } from '../utils/logger';
 
 export default function ProfileScreen() {
   const { authState, signOut: authSignOut, updateSubscription, updateUser } = useAuth();
@@ -30,6 +31,9 @@ export default function ProfileScreen() {
     sendTestNotification
   } = useNotifications();
   const [name, setName] = useState('John Doe');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [isUpdatingName, setIsUpdatingName] = useState(false);
   const [email, setEmail] = useState('john@example.com');
   const [activeTab, setActiveTab] = useState('overview');
   const [avatar, setAvatar] = useState('');
@@ -77,7 +81,9 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (authState.user) {
-      setName(authState.user.userName || 'User');
+      const currentName = authState.user.userName || 'User';
+      setName(currentName);
+      setNewUserName(currentName);
       setEmail(authState.user.email || '');
       setAvatar(authState.user.avatar || '');
     }
@@ -789,6 +795,152 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleToggleEditName = async () => {
+    if (!authState.user?.userID) {
+      Alert.alert('Error', 'Missing user info. Please sign in again.');
+      return;
+    }
+
+    if (!isEditingName) {
+      setNewUserName(name || authState.user.userName || '');
+      setIsEditingName(true);
+      return;
+    }
+
+    const trimmed = (newUserName || '').trim();
+    if (!trimmed) {
+      Alert.alert('Error', 'Please enter a valid name');
+      return;
+    }
+
+    if (trimmed === (name || '').trim()) {
+      setIsEditingName(false);
+      return;
+    }
+
+    setIsUpdatingName(true);
+    try {
+      await Haptics.selectionAsync();
+
+      const userId = authState.user.userID;
+
+      // 1) Lấy full profile mới nhất từ backend (để có firstName/lastName/avatar/gender/dateOfBirth)
+      logger.info('EditName: fetching user profile', { userId });
+      const userRes = await filmzoneApi.getUserById(userId);
+      const userOk = (userRes as any).success === true || (userRes.errorCode >= 200 && userRes.errorCode < 300);
+      if (!userOk || !userRes.data) {
+        logger.error('EditName: getUserById failed', {
+          userId,
+          errorCode: (userRes as any).errorCode,
+          errorMessage: (userRes as any).errorMessage,
+          success: (userRes as any).success,
+        });
+        Alert.alert('Error', userRes.errorMessage || 'Failed to load user profile');
+        return;
+      }
+
+            const u: any = userRes.data;
+      const profile: any = u?.profile || {};
+
+      const firstName = u?.firstName ?? profile?.firstName ?? '';
+      const lastName = u?.lastName ?? profile?.lastName ?? '';
+      const avatarFromApi = u?.avatar ?? profile?.avatar ?? '';
+      const gender = u?.gender ?? profile?.gender ?? '';
+      const dateOfBirth = u?.dateOfBirth ?? profile?.dateOfBirth ?? '';
+
+      logger.info('EditName: extracted profile fields', {
+        userId,
+        firstNameLen: String(firstName || '').length,
+        lastNameLen: String(lastName || '').length,
+        hasAvatar: !!avatarFromApi,
+        gender,
+        dateOfBirth,
+      });
+
+      // 2) Update profile name
+      logger.info('EditName: updating profile', {
+        userId,
+        newUserName: trimmed,
+        hasFirstName: !!firstName,
+        hasLastName: !!lastName,
+        hasAvatar: !!avatarFromApi,
+        gender,
+        dateOfBirth,
+        userKeys: u && typeof u === 'object' ? Object.keys(u) : [],
+      });
+
+      // Update name dùng cùng phương thức với change avatar: multipart/form-data
+      // Theo yêu cầu: avatar và dateOfBirth gửi null
+      const form = new FormData();
+      form.append('userID', String(userId));
+      form.append('newUserName', trimmed);
+      form.append('firstName', firstName || '');
+      form.append('lastName', lastName || '');
+      form.append('gender', gender || '');
+      // gửi null theo yêu cầu (backend thường sẽ nhận 'null' string -> nếu cần, mình sẽ đổi sang bỏ field)
+      form.append('avatar', 'null');
+      form.append('dateOfBirth', 'null');
+
+      const updateProfileRes: any = await filmzoneApi.request('/user/update/profile', {
+        method: 'PUT',
+        // @ts-ignore
+        headers: { 'Content-Type': 'multipart/form-data' },
+        body: form as any,
+      });
+
+      const updateOk =
+        (updateProfileRes as any).success === true ||
+        (updateProfileRes.errorCode >= 200 && updateProfileRes.errorCode < 300);
+
+
+      if (!updateOk) {
+        logger.error('EditName: update profile failed', {
+          userId,
+          newUserName: trimmed,
+          errorCode: (updateProfileRes as any).errorCode,
+          errorMessage: (updateProfileRes as any).errorMessage,
+          success: (updateProfileRes as any).success,
+          dataPreview: (() => {
+            try {
+              const d: any = (updateProfileRes as any).data;
+              if (d === undefined || d === null) return 'No data';
+              const s = JSON.stringify(d);
+              return s ? s.substring(0, 500) : 'Empty';
+            } catch (e: any) {
+              return `Failed to stringify data: ${e?.message || String(e)}`;
+            }
+          })(),
+        });
+        Alert.alert('Error', updateProfileRes.errorMessage || 'Failed to update name');
+        return;
+      }
+
+      logger.info('EditName: update profile success', {
+        userId,
+        newUserName: trimmed,
+        errorCode: (updateProfileRes as any).errorCode,
+      });
+
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      setName(trimmed);
+      updateUser({ userName: trimmed } as any);
+      setIsEditingName(false);
+    } catch (error: any) {
+      logger.error('EditName: exception', {
+        userId: authState.user?.userID,
+        newUserName: newUserName,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        error: String(error),
+      });
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', error?.message || 'Failed to update name');
+    } finally {
+      setIsUpdatingName(false);
+    }
+  };
+
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -937,7 +1089,38 @@ export default function ProfileScreen() {
             </View>
           )}
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.headerName}>{name || 'User'}</Text>
+            <View style={styles.nameRow}>
+              {isEditingName ? (
+                <View style={styles.nameInputContainer}>
+                  <TextInput
+                    value={newUserName}
+                    onChangeText={setNewUserName}
+                    placeholder="Enter new name"
+                    placeholderTextColor="#c7c7cc"
+                    style={styles.nameInput}
+                    editable={!isUpdatingName}
+                  />
+                </View>
+              ) : (
+                <Text style={styles.headerName}>{name || 'User'}</Text>
+              )}
+
+              <Pressable
+                onPress={handleToggleEditName}
+                disabled={isUpdatingName}
+                style={({ pressed }) => [styles.editNameBtn, (pressed || isUpdatingName) && { opacity: 0.8 }]}
+                hitSlop={8}
+              >
+                {isEditingName ? (
+                  <Text style={styles.confirmText}>{isUpdatingName ? '...' : 'OK'}</Text>
+                ) : (
+                  <Image
+                    source={require('../assets/images/edit.png')}
+                    style={styles.editIcon}
+                  />
+                )}
+              </Pressable>
+            </View>
             <Text style={styles.headerMeta}>Member</Text>
           </View>
           <View style={{ flex: 1 }} />
@@ -1773,6 +1956,12 @@ const styles = StyleSheet.create({
   avatarPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#e50914', alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { color: '#fff', fontSize: 24, fontWeight: '700' },
   headerName: { color: '#fff', fontWeight: '800', fontSize: 18 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 220 },
+  editNameBtn: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e50914' },
+  editIcon: { width: 18, height: 18, tintColor: '#e50914' },
+  confirmText: { color: '#e50914', fontWeight: '800', fontSize: 14 },
+  nameInputContainer: { flex: 1, minWidth: 90, maxWidth: 180 },
+  nameInput: { height: 34, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e50914', backgroundColor: '#14141b', color: '#fff', fontSize: 16 },
   headerMeta: { color: '#c7c7cc', marginTop: 4 },
 
   section: { margin: 12, backgroundColor: '#121219', borderRadius: 12, padding: 12 },
@@ -2105,5 +2294,3 @@ const styles = StyleSheet.create({
     height: 20,
   },
 });
-
-

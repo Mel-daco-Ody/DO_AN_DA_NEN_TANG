@@ -39,7 +39,6 @@ export default function RootLayout() {
                 <Stack.Screen name="auth/signup" options={{ headerShown: false }} />
                 <Stack.Screen name="auth/forgot" options={{ headerShown: false }} />
                 <Stack.Screen name="auth/mfa-verify" options={{ headerShown: false }} />
-                <Stack.Screen name="auth/google/callback" options={{ headerShown: false }} />
                 <Stack.Screen name="details/movie/[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="details/series/[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="profile" options={{ headerShown: false }} />

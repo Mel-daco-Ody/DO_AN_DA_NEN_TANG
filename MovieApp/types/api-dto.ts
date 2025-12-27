@@ -330,3 +330,15 @@ export interface VnPayCheckoutResponse {
   priceId: number;
 }
 
+// Movie Subtitle DTOs
+export interface MovieSubTitleDTO {
+  movieSubTitleID: number;
+  movieSourceID: number;
+  language: string;
+  subTitleName: string;
+  linkSubTitle: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
