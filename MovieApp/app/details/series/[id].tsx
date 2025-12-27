@@ -59,8 +59,10 @@ export default function SeriesDetailsScreen() {
       try {
         // Load movie details
         const movieResponse = await filmzoneApi.getMovieById(parseInt(id as string));
-        if (movieResponse.success) {
-          setMovieData(movieResponse.data);
+        // Align with movie detail: treat 2xx as success and use .data
+        const movieOk = (movieResponse as any).success === true || ((movieResponse as any).errorCode >= 200 && (movieResponse as any).errorCode < 300);
+        if (movieOk && (movieResponse as any).data) {
+          setMovieData((movieResponse as any).data);
         }
 
         // Load actors via MoviePerson
@@ -574,14 +576,10 @@ export default function SeriesDetailsScreen() {
         </View>
         ) : null}
         <Text style={styles.kv}>
-          {t('details.actors')}: <Text style={styles.kvVal}>
-            {actors.length
-              ? actors.map((a: any) => a.fullName).join(', ')
-              : 'N/A'}
-          </Text>
+          {t('details.actors')}: 
         </Text>
         <View style={styles.actorLinks}>
-          {actors.slice(0, 3).map((actor: any, index: number) => (
+          {actors.slice(0, actors.length).map((actor: any, index: number) => (
             <Pressable
               key={actor.personID || index}
               onPress={() => actor.personID && router.push(`/actor/${actor.personID}` as any)}
@@ -591,7 +589,7 @@ export default function SeriesDetailsScreen() {
             </Pressable>
           ))}
         </View>
-        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || safe(description, 'N/A')}</Text>
+        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || 'No description available'}</Text>
       </View>
 
       {/* Advertisement Banner - Full Width */}
@@ -708,14 +706,16 @@ export default function SeriesDetailsScreen() {
           }
           
           if (episodesToRender.length > 0) {
-            const displayEpisodes = isExpanded ? episodesToRender : episodesToRender.slice(0, 3);
+            const displayEpisodes = isExpanded ? episodesToRender : episodesToRender.slice(0, episodesToRender.length);
             
             return (
-              <View style={styles.episodesContainer}>
+              <View style={[styles.episodesContainer, !isExpanded && styles.episodesContainerCollapsed]}>
                 <FlatList
                   data={displayEpisodes}
                   keyExtractor={(item) => item.id.toString()}
-                  scrollEnabled={false}
+                  // Make episodes list scrollable even when collapsed
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item: episode, index }) => {
               const isLatestWatched = latestWatched && 
@@ -761,7 +761,7 @@ export default function SeriesDetailsScreen() {
                 >
                   <View style={styles.episodeThumbnail}>
                     <ImageWithPlaceholder 
-                      source={{ uri: episode.thumbnail }} 
+                      source={{ uri: episode.episodeThumbnail }} 
                       style={styles.episodeThumbnailImage} 
                       showRedBorder={false}
                     />
@@ -1283,6 +1283,10 @@ const styles = StyleSheet.create({
   // Episodes List
   episodesList: { marginTop: 8 },
   episodesContainer: { marginTop: 8 },
+  // When collapsed, keep episodes in a fixed-height area so it scrolls internally (instead of scrolling the whole page)
+  episodesContainerCollapsed: {
+    maxHeight: 260,
+  },
   episodeItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -1615,7 +1619,7 @@ const styles = StyleSheet.create({
   },
   actorLinks: {
     flexDirection: 'row',
-    flexWrap: 'nowrap',
+    flexWrap: 'wrap',
     marginTop: 8,
     gap: 8,
     overflow: 'visible'

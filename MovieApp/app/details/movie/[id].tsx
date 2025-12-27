@@ -496,14 +496,10 @@ export default function MovieDetailsScreen() {
           </View>
         ) : null}
         <Text style={styles.kv}>
-          {t('details.actors')}: <Text style={styles.kvVal}>
-            {actors.length
-              ? actors.map((a: any) => a.fullName).join(', ')
-              : 'N/A'}
-          </Text>
+          {t('details.actors')}: 
         </Text>
         <View style={styles.actorLinks}>
-          {actors.slice(0, 3).map((actor: any, index: number) => (
+          {actors.slice(0, actors.length).map((actor: any, index: number) => (
             <Pressable
               key={actor.personID || index}
               onPress={() => actor.personID && router.push(`/actor/${actor.personID}` as any)}
@@ -513,7 +509,7 @@ export default function MovieDetailsScreen() {
             </Pressable>
           ))}
         </View>
-        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || safe(description, 'N/A')}</Text>
+        <Text style={[styles.sectionText, { marginTop: 8 }]}>{movieData?.description || 'No description available'}</Text>
       </View>
 
       {/* Advertisement Banner - Full Width */}
@@ -1155,7 +1151,7 @@ const styles = StyleSheet.create({
   },
   actorLinks: {
     flexDirection: 'row',
-    flexWrap: 'nowrap',
+    flexWrap: 'wrap',
     marginTop: 8,
     gap: 8,
     overflow: 'visible'

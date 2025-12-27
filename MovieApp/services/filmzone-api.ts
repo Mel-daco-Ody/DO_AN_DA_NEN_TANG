@@ -363,29 +363,30 @@ class FilmZoneApi {
   }
 
   /**
-   * PUT /user/update/profile
-   * Cập nhật tên người dùng với newUserName và userID
+   * PUT /user/update/username?userId={userId}&newUsername={newUsername}
+   * Đổi username theo swagger (query params)
    */
   async updateUserName(params: {
-    userID: number;
-    newUserName: string;
-  }): Promise<FilmZoneResponse<UserDTO>> {
-    const { userID, newUserName } = params;
+    userId: number;
+    newUsername: string;
+  }): Promise<FilmZoneResponse<any>> {
+    const { userId, newUsername } = params;
 
-    if (!userID || !newUserName || !newUserName.trim()) {
+    if (!userId || !newUsername || !newUsername.trim()) {
       return {
         errorCode: 400,
-        errorMessage: 'userID and newUserName are required',
+        errorMessage: 'userId and newUsername are required',
         success: false,
       };
     }
 
-    return this.request<UserDTO>('/user/update/profile', {
+    const query = new URLSearchParams({
+      userId: String(userId),
+      newUsername: newUsername.trim(),
+    }).toString();
+
+    return this.request<any>(`/user/update/username?${query}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        userID,
-        newUserName: newUserName.trim(),
-      }),
     });
   }
 

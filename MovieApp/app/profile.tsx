@@ -869,23 +869,15 @@ export default function ProfileScreen() {
         userKeys: u && typeof u === 'object' ? Object.keys(u) : [],
       });
 
-      // Update name dùng cùng phương thức với change avatar: multipart/form-data
-      // Theo yêu cầu: avatar và dateOfBirth gửi null
-      const form = new FormData();
-      form.append('userID', String(userId));
-      form.append('newUserName', trimmed);
-      form.append('firstName', firstName || '');
-      form.append('lastName', lastName || '');
-      form.append('gender', gender || '');
-      // gửi null theo yêu cầu (backend thường sẽ nhận 'null' string -> nếu cần, mình sẽ đổi sang bỏ field)
-      form.append('avatar', 'null');
-      form.append('dateOfBirth', 'null');
+      // 2) Update username bằng API mới: /user/update/username (query params)
+      logger.info('EditName: updating username via /user/update/username', {
+        userId,
+        newUsername: trimmed,
+      });
 
-      const updateProfileRes: any = await filmzoneApi.request('/user/update/profile', {
-        method: 'PUT',
-        // @ts-ignore
-        headers: { 'Content-Type': 'multipart/form-data' },
-        body: form as any,
+      const updateProfileRes: any = await filmzoneApi.updateUserName({
+        userId,
+        newUsername: trimmed,
       });
 
       const updateOk =

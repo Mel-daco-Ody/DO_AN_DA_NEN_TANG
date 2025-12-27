@@ -21,6 +21,8 @@ export default function VideoPlayerScreen() {
   const [status, setStatus] = useState({});
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef<boolean>(false);
+  const userPausedRef = useRef<boolean>(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videoUri, setVideoUri] = useState<string>('');
@@ -54,6 +56,7 @@ export default function VideoPlayerScreen() {
   const [selectedSubtitleLanguage, setSelectedSubtitleLanguage] = useState<string>('');
   const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Subtitle languages data
   const subtitleLanguages = [
@@ -542,6 +545,7 @@ export default function VideoPlayerScreen() {
         setVideoError(false);
         setLoadingElapsedSeconds(0);
         setHasPlayedOnce(false); // Reset wave animation for new video
+        userPausedRef.current = false; // Reset user pause state for new video
         setIsBuffering(false); // Reset buffering state for new video
         setIsInitialBuffering(false); // Reset initial buffering state for new video
         // Reset subtitles
@@ -556,6 +560,17 @@ export default function VideoPlayerScreen() {
         loadingIntervalRef.current = setInterval(() => {
           setLoadingElapsedSeconds(prev => prev + 10);
         }, 10000);
+
+        // Hard timeout: if player takes too long to load, show error (user can go back / retry later)
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+        }
+        loadingTimeoutRef.current = setTimeout(() => {
+          console.log('VideoPlayerScreen: load timeout - marking videoError');
+          setIsLoadingVideo(false);
+          setVideoError(true);
+          setVideoUri('');
+        }, 30000);
         
         console.log('VideoPlayerScreen: loadVideoSource params', { id, type, episode, videoUrl });
 
@@ -753,6 +768,10 @@ export default function VideoPlayerScreen() {
           clearInterval(loadingIntervalRef.current);
           loadingIntervalRef.current = null;
         }
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+          loadingTimeoutRef.current = null;
+        }
         console.log('VideoPlayerScreen: loadVideoSource finally - setting isLoadingVideo to false', {
           videoUri,
           videoError,
@@ -772,8 +791,12 @@ export default function VideoPlayerScreen() {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
       }
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
     };
-  }, [id, type, episode, videoUrl, authState.user]);
+  }, [id, type, episode, videoUrl, authState.user?.userID]);
 
   // Handle screen orientation - Allow both portrait and landscape
   useEffect(() => {
@@ -811,15 +834,15 @@ export default function VideoPlayerScreen() {
 
   useEffect(() => {
     // Hide controls after 3 seconds when they are shown
-    // But keep controls visible when buffering (loading bubbles are showing)
-    if (showControls && !isBuffering) {
+    // But keep controls visible when buffering / initial buffering
+    if (showControls && !isBuffering && !isInitialBuffering) {
       const timer = setTimeout(() => {
         setShowControls(false);
       }, 3000);
 
       return () => clearTimeout(timer);
     }
-  }, [showControls, isBuffering]);
+  }, [showControls, isBuffering, isInitialBuffering]);
 
   // Wave animation effect - only run if video hasn't been played yet
   useEffect(() => {
@@ -902,15 +925,17 @@ export default function VideoPlayerScreen() {
 
   const togglePlayPause = async () => {
     if (isToggling) return; // Prevent multiple rapid calls
-    
+
     try {
       setIsToggling(true);
       await Haptics.selectionAsync();
-      
+
       // Don't change state immediately, let the video status update handle it
       if (isPlaying) {
+        userPausedRef.current = true;
         await videoRef.current?.pauseAsync();
       } else {
+        userPausedRef.current = false;
         // Mark as played for the first time when starting playback
         if (!hasPlayedOnce) {
           setHasPlayedOnce(true);
@@ -921,7 +946,7 @@ export default function VideoPlayerScreen() {
         }
         await videoRef.current?.playAsync();
       }
-      
+
       // Reset controls timer
       setShowControls(true);
     } catch (error) {
@@ -961,14 +986,12 @@ export default function VideoPlayerScreen() {
       const buffering = playbackStatus.isBuffering || false;
       
       // If we're in initial buffering phase and video has enough buffer, end initial buffering
-      // Reduced from 5s to 2s for faster playback start
+      // End as soon as playback starts OR we have a small playable buffer
       if (isInitialBuffering && playbackStatus.durationMillis) {
         const bufferedDuration = playbackStatus.playableDurationMillis || 0;
-        const minBufferSeconds = 2; // Minimum 2 seconds buffer to end initial buffering (reduced for faster start)
-        const minBufferMillis = minBufferSeconds * 1000;
-        
-        // End initial buffering if we have enough buffer OR if video is already playing
-        if ((bufferedDuration >= minBufferMillis && !buffering) || playbackStatus.isPlaying) {
+        const minBufferMillis = 1000; // 1s is enough to hide the initial loader
+
+        if (playbackStatus.isPlaying || (bufferedDuration >= minBufferMillis && !buffering)) {
           setIsInitialBuffering(false);
         }
       }
@@ -1001,7 +1024,8 @@ export default function VideoPlayerScreen() {
       }
       
       // Only update isPlaying if the status actually changed
-      if (playbackStatus.isPlaying !== isPlaying) {
+      if (playbackStatus.isPlaying !== isPlayingRef.current) {
+        isPlayingRef.current = playbackStatus.isPlaying;
         setIsPlaying(playbackStatus.isPlaying);
         // Mark as played for the first time when video starts playing
         if (playbackStatus.isPlaying && !hasPlayedOnce) {
@@ -1297,7 +1321,7 @@ export default function VideoPlayerScreen() {
             // Video will load in chunks as needed
           }}
           resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={isPlaying}
+          shouldPlay={true}
           isLooping={false}
           isMuted={isMuted}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
@@ -1306,17 +1330,17 @@ export default function VideoPlayerScreen() {
           useNativeControls={false}
           // Enable faster playback start
           shouldCorrectPitch={false}
-          // Optimize for faster buffering
-          resizeMode={ResizeMode.CONTAIN}
           // Start playing when enough buffer is available (default behavior)
           onLoadStart={() => {
             console.log('VideoPlayerScreen: Video load started');
+            // Show buffering UI as soon as the player starts loading
+            setIsInitialBuffering(true);
+            setIsBuffering(true);
           }}
           onLoad={() => {
             console.log('VideoPlayerScreen: Video loaded, ready to play');
-            // Video is ready, can start playing
-            // Try to start playing immediately if not already playing
-            if (!isPlaying && videoRef.current) {
+            // Auto-play ASAP to reduce perceived buffering, but respect user pause
+            if (!userPausedRef.current && videoRef.current) {
               videoRef.current.playAsync().catch(err => {
                 console.log('VideoPlayerScreen: Auto-play on load failed (normal if user interaction required):', err);
               });
