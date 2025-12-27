@@ -556,11 +556,7 @@ export default function SeriesDetailsScreen() {
         </Text></Text>
         <Text style={styles.kv}>{t('details.country')}: <Text style={styles.kvVal}>{movieData?.region?.regionName || safe(country)}</Text></Text>
         <Text style={styles.kv}>
-          {t('details.genre')}: <Text style={styles.kvVal}>
-            {tags.length
-              ? tags.map((tag: any) => tag.tagName).join(', ')
-              : safe(categories)}
-          </Text>
+          {t('details.genre')}: 
         </Text>
         {tags.length ? (
         <View style={styles.categoryLinks}>
