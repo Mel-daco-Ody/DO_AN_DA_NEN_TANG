@@ -709,9 +709,9 @@ export default function SeriesDetailsScreen() {
                 <FlatList
                   data={displayEpisodes}
                   keyExtractor={(item) => item.id.toString()}
-                  // Make episodes list scrollable even when collapsed
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
+                  // Disable scroll to avoid nested VirtualizedList warning (outer ScrollView handles scrolling)
+                  scrollEnabled={false}
+                  nestedScrollEnabled={false}
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item: episode, index }) => {
               const isLatestWatched = latestWatched && 
@@ -1052,11 +1052,7 @@ export default function SeriesDetailsScreen() {
               <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
                 {'All Comments'} ({totalCommentsCount})
               </Text>
-              <ScrollView 
-                style={styles.commentsList} 
-                nestedScrollEnabled={true}
-                showsVerticalScrollIndicator={true}
-              >
+              <View style={styles.commentsList}>
                 {sortedParents.length === 0 ? (
                   <Text style={styles.noCommentsText}>{'No comments yet. Be the first to comment!'}</Text>
                 ) : (
@@ -1070,7 +1066,7 @@ export default function SeriesDetailsScreen() {
                     );
                   })
                 )}
-              </ScrollView>
+              </View>
             </>
           );
         })()}

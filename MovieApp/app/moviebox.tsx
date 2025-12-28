@@ -18,6 +18,13 @@ export default function MovieBoxScreen() {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const { removeSavedMovie, refreshSavedMovies, savedMovieIds } = useSavedMoviesContext();
+
+  // Ensure saved ids are loaded from backend before filtering results
+  React.useEffect(() => {
+    if (authState.user?.userID) {
+      refreshSavedMovies();
+    }
+  }, [authState.user?.userID, refreshSavedMovies]);
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'rating'>('date');
   const [savedMovies, setSavedMovies] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,9 +50,9 @@ export default function MovieBoxScreen() {
         if (response.errorCode === 200) {
           const movies = response.data || [];
           // Filter movies to only include those in context (to avoid showing deleted movies)
-          // Only filter if context has been loaded (has items) to avoid filtering on initial load
+          // IMPORTANT: context may still be empty on first load; make sure we refreshed it above.
           const savedIds = Array.from(savedMovieIds);
-          const filteredMovies = (savedIds.length > 0 && savedMovieIds.size > 0)
+          const filteredMovies = savedMovieIds.size > 0
             ? movies.filter((item: any) => savedIds.includes(item.movieID))
             : movies;
           

@@ -649,7 +649,8 @@ class FilmZoneApi {
    */
   async getMovie(movieId: string): Promise<FilmZoneResponse<MovieDTO> | null> {
     const response = await this.getMovieById(parseInt(movieId));
-    if (!response.success || !response.data) {
+    const ok = (response as any).success === true || ((response as any).errorCode >= 200 && (response as any).errorCode < 300);
+    if (!ok || !(response as any).data) {
       return null;
     }
     return response;

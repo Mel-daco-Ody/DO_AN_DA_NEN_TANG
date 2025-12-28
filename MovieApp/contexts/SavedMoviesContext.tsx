@@ -157,24 +157,54 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
 
   const addSavedMovie = useCallback(async (movieId: number) => {
     try {
-      const response = await filmzoneApi.createSavedMovie({ movieID: movieId });
-      setSavedMovieIds(prev => new Set([...prev, movieId]));
+      if (!authState.user?.userID) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('SavedMoviesContext: Adding movie to saved list:', movieId, 'for user:', authState.user.userID);
+      // According to OpenAPI spec, CreateSavedMovie requires both userID and movieID
+      const response = await filmzoneApi.createSavedMovie({ 
+        userID: authState.user.userID,
+        movieID: movieId 
+      });
+      console.log('SavedMoviesContext: Add API response:', JSON.stringify(response, null, 2));
+
+      const errorCode = (response as any).errorCode;
+      const errorMessage = (response as any).errorMessage || '';
       
+      // Handle "already saved" case (400) - treat as success and refresh context to sync
+      if (errorCode === 400 && errorMessage.toLowerCase().includes('already saved')) {
+        console.log('SavedMoviesContext: Movie already saved, refreshing context to sync...');
+        await refreshSavedMovies();
+        return; // Don't throw, just sync context
+      }
+
+      const ok = (response as any).success === true || (errorCode >= 200 && errorCode < 300);
+      if (!ok) {
+        throw new Error(errorMessage || 'Failed to save movie');
+      }
+
+      // Optimistic update
+      setSavedMovieIds(prev => new Set([...prev, movieId]));
+
       // If response contains savedMovieID, add it to map
-      if (response.data && (response.data as any).savedMovieID) {
+      if ((response as any).data && (response.data as any).savedMovieID) {
         setSavedMovieIdMap(prev => {
           const newMap = new Map(prev);
           newMap.set(movieId, (response.data as any).savedMovieID);
           return newMap;
         });
       }
-      
-      console.log('SavedMoviesContext: Added movie to saved list:', movieId);
+
+      // Ensure server + context are in sync (important if API doesn't return savedMovieID)
+      await refreshSavedMovies();
+
+      console.log('SavedMoviesContext: Added movie successfully:', movieId);
     } catch (error) {
       console.error('SavedMoviesContext: Error adding saved movie:', error);
       throw error;
     }
-  }, [authState.user?.userID]);
+  }, [authState.user?.userID, refreshSavedMovies]);
 
   const getSavedMovieID = useCallback((movieId: number): number | undefined => {
     return savedMovieIdMap.get(movieId);
