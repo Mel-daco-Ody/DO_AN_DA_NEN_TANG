@@ -186,7 +186,7 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
 
       // Optimistic update
       setSavedMovieIds(prev => new Set([...prev, movieId]));
-
+      
       // If response contains savedMovieID, add it to map
       if ((response as any).data && (response.data as any).savedMovieID) {
         setSavedMovieIdMap(prev => {
@@ -195,7 +195,7 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
           return newMap;
         });
       }
-
+      
       // Ensure server + context are in sync (important if API doesn't return savedMovieID)
       await refreshSavedMovies();
 

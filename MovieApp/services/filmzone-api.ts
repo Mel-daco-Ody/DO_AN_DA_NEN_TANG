@@ -839,11 +839,11 @@ class FilmZoneApi {
   // ==================== SUBTITLE APIs ====================
 
   /**
-   * GET /movie/MovieSubTitle/GetMovieSubTitlesBySourceID/{sourceId}
-   * Lấy danh sách subtitle theo movie sourceID
+   * GET /api/MovieSubTitle/GetAllSubTitlesByMovieId/movie/GetAllSubTitlesBySourceID/{sourceID}
+   * Lấy danh sách subtitle theo movieSourceID (sourceID)
    */
   async getMovieSubtitlesBySourceID(sourceId: number): Promise<FilmZoneResponse<any[]>> {
-    return this.request<any[]>(`/movie/MovieSubTitle/GetMovieSubTitlesBySourceID/${sourceId}`);
+    return this.request<any[]>(`/api/MovieSubTitle/GetAllSubTitlesByMovieId/movie/GetAllSubTitlesBySourceID/${sourceId}`);
   }
 
   /**

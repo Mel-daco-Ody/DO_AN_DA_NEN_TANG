@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, View, Text, Pressable, Dimensions, StatusBar, Animated, ScrollView, Alert } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -26,6 +27,8 @@ export default function VideoPlayerScreen() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videoUri, setVideoUri] = useState<string>('');
+  const [isYoutube, setIsYoutube] = useState(false);
+  const [youtubeVideoId, setYoutubeVideoId] = useState<string>('');
   const [isLoadingVideo, setIsLoadingVideo] = useState(true);
   const [subtitles, setSubtitles] = useState<any[]>([]);
   const [availableSubtitles, setAvailableSubtitles] = useState<any[]>([]);
@@ -107,6 +110,33 @@ export default function VideoPlayerScreen() {
     } catch (error) {
       console.error('Error checking VIP subscription:', error);
       return false;
+    }
+  };
+
+  const extractYoutubeVideoId = (url: string): string => {
+    try {
+      const cleaned = url.trim();
+      // Accept patterns like:
+      // - https://youtube/VIDEO_ID
+      // - https://youtube.com/watch?v=VIDEO_ID
+      // - https://www.youtube.com/watch?v=VIDEO_ID
+      // - https://youtu.be/VIDEO_ID
+      // - youtube://VIDEO_ID
+      const directMatch = cleaned.match(/https?:\/\/youtube\/(.+)$/i);
+      if (directMatch?.[1]) return directMatch[1].split(/[?&#/]/)[0];
+
+      const youtuBe = cleaned.match(/https?:\/\/youtu\.be\/([^?&#/]+)/i);
+      if (youtuBe?.[1]) return youtuBe[1];
+
+      const watch = cleaned.match(/[?&]v=([^?&#/]+)/i);
+      if (watch?.[1]) return watch[1];
+
+      const embed = cleaned.match(/\/embed\/([^?&#/]+)/i);
+      if (embed?.[1]) return embed[1];
+
+      return '';
+    } catch {
+      return '';
     }
   };
 
@@ -638,7 +668,17 @@ export default function VideoPlayerScreen() {
                 sourceUrl: selectedSource.sourceUrl,
                 selectedSource
               });
-              setVideoUri(selectedSource.sourceUrl);
+              const sourceUrl = selectedSource.sourceUrl;
+              const ytId = extractYoutubeVideoId(sourceUrl);
+              if (ytId) {
+                setIsYoutube(true);
+                setYoutubeVideoId(ytId);
+                setVideoUri(sourceUrl);
+              } else {
+                setIsYoutube(false);
+                setYoutubeVideoId('');
+                setVideoUri(sourceUrl);
+              }
               setCurrentEpisodeSourceId(episodeSourceId);
               setRequiresSubscription(false);
               setVideoError(false);
@@ -724,7 +764,17 @@ export default function VideoPlayerScreen() {
                   sourceIdRaw 
                 });
                 
-                setVideoUri(selectedSource.sourceUrl);
+                const sourceUrl = selectedSource.sourceUrl;
+                const ytId = extractYoutubeVideoId(sourceUrl);
+                if (ytId) {
+                  setIsYoutube(true);
+                  setYoutubeVideoId(ytId);
+                  setVideoUri(sourceUrl);
+                } else {
+                  setIsYoutube(false);
+                  setYoutubeVideoId('');
+                  setVideoUri(sourceUrl);
+                }
                 setCurrentSourceId(sourceIdRaw);
                 setRequiresSubscription(false);
                 setVideoError(false); // Ensure video error is cleared
@@ -924,6 +974,15 @@ export default function VideoPlayerScreen() {
   }, [isInitialBuffering, loadingBubbleRotation]);
 
   const togglePlayPause = async () => {
+    // YouTube playback is controlled by YoutubePlayer via `play` prop
+    if (isYoutube) {
+      try {
+        await Haptics.selectionAsync();
+      } catch {}
+      setIsPlaying(prev => !prev);
+      setShowControls(true);
+      return;
+    }
     if (isToggling) return; // Prevent multiple rapid calls
 
     try {
@@ -1312,6 +1371,38 @@ export default function VideoPlayerScreen() {
       
       {/* Video Player */}
       {!isLoadingVideo && !videoError && !requiresSubscription && videoUri && (
+        isYoutube && youtubeVideoId ? (
+          <View style={styles.youtubeContainer}>
+            <YoutubePlayer
+              
+              /**
+               * Giữ tỷ lệ 16:9 cho mọi orientation:
+               *  - Landscape  : cao = chiều cao màn, rộng = cao * 16/9 (<= chiều rộng màn)
+               *  - Portrait   : rộng = chiều rộng màn, cao = rộng * 9/16
+               */
+              width={isLandscape ? Math.round(Dimensions.get('window').height * 16 / 9) : Dimensions.get('window').width}
+              height={isLandscape ? Dimensions.get('window').height : Math.round(Dimensions.get('window').width * 9 / 16)}
+              play={isPlaying}
+              videoId={youtubeVideoId}
+              onChangeState={(state: string) => {
+                // basic state sync
+                if (state === 'playing') {
+                  setIsPlaying(true);
+                }
+                if (state === 'paused' || state === 'ended') {
+                  setIsPlaying(false);
+                }
+              }}
+              webViewStyle={styles.youtubeWebView}
+              initialPlayerParams={{
+                controls: true,
+                fullscreen: true,
+                playsinline: false,
+                modestbranding: true,
+              }}
+            />
+          </View>
+        ) : (
         <Video
           ref={videoRef}
           style={styles.video}
@@ -1347,10 +1438,11 @@ export default function VideoPlayerScreen() {
             }
           }}
         />
+        )
       )}
 
-      {/* Controls Overlay */}
-      {showControls && !videoError && !requiresSubscription && (
+      {/* Controls Overlay (hide when using YouTube player) */}
+      {showControls && !videoError && !requiresSubscription && !isYoutube && (
         <View style={styles.controlsOverlay}>
           {/* Top Controls */}
           <View style={[styles.topControls, !isLandscape && styles.topControlsPortrait]}>
@@ -1734,6 +1826,16 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  youtubeContainer: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  youtubeWebView: {
+    backgroundColor: '#000',
   },
   controlsOverlay: {
     position: 'absolute',
