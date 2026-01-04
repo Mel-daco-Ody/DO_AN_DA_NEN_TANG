@@ -27,7 +27,6 @@ import {
   UserRatingDTO,
   CreateUserRatingRequest,
   UpdateUserRatingRequest,
-  SearchRequest,
   SearchResultDTO,
   EpisodeSourceDTO,
   StartPasswordChangeRequest,
@@ -37,6 +36,9 @@ import {
   VnPayCheckoutResponse,
 } from '../types/api-dto';
 import { logger } from '../utils/logger';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { matchApiPermission } from '../utils/permission-route-matcher';
+import { PermissionDeniedError } from '../errors/PermissionDeniedError';
 
 interface ApiConfig {
   baseURL: string;
@@ -63,17 +65,38 @@ class FilmZoneApi {
     this.refreshToken = refreshToken;
   }
 
-  private getHeaders(): Record<string, string> {
+  private getHeaders(token?: string | null): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    const t = token ?? this.token;
+    if (t) {
+      headers.Authorization = `Bearer ${t}`;
     }
 
     return headers;
+  }
+
+  private async readAuthState(): Promise<{
+    token: string | null;
+    permissions: string[];
+  }> {
+    try {
+      const raw = await AsyncStorage.getItem('@auth_state');
+      if (!raw) return { token: this.token, permissions: [] };
+      const parsed = JSON.parse(raw);
+      const token = parsed?.token ?? this.token;
+      const permissions = Array.isArray(parsed?.permissions) ? parsed.permissions : [];
+      return { token, permissions };
+    } catch {
+      return { token: this.token, permissions: [] };
+    }
+  }
+
+  private hasPermission(userPermissions: string[], required: string): boolean {
+    return userPermissions.includes(required);
   }
 
   async request<T>(
@@ -81,10 +104,35 @@ class FilmZoneApi {
     options: RequestInit = {},
     customTimeout?: number
   ): Promise<FilmZoneResponse<T>> {
+    const method = ((options.method || 'GET') as string).toUpperCase();
     const url = `${this.config.baseURL}${endpoint}`;
-    
+
+    // Client-side permission guard (UX). Backend still enforces via Bearer token.
+    const matched = matchApiPermission(method, endpoint);
+    // Use in-memory token for immediate consistency after login, get permissions from storage
+    const { permissions } = await this.readAuthState();
+    const token = this.token;
+
+    if (matched) {
+      const { entry, path } = matched;
+
+      // For action-gating: only throw for non-GET requests (POST, PUT, DELETE)
+      // GET requests will proceed and let the UI handle a 403 response if needed.
+      if (method !== 'GET' && !entry.isPublic && entry.permission) {
+        if (!this.hasPermission(permissions, entry.permission)) {
+          // Throw so global modal can handle everywhere
+          throw new PermissionDeniedError({
+            requiredPermission: entry.permission,
+            method,
+            path,
+            message: 'Nội dung dành cho tài khoản cấp cao hơn. Vui lòng nâng cấp để sử dụng.',
+          });
+        }
+      }
+    }
+
     const config: RequestInit = {
-      headers: this.getHeaders(),
+      headers: this.getHeaders(token),
       ...options,
     };
 
@@ -231,12 +279,13 @@ class FilmZoneApi {
 
   /**
    * POST /login/login/mobile
+   * Uses longer timeout (20s) as login may take longer due to authentication processing
    */
   async login(request: LoginRequest): Promise<FilmZoneResponse<LoginResponse>> {
     const response = await this.request<any>('/login/login/mobile', {
       method: 'POST',
       body: JSON.stringify(request),
-    });
+    }, 20000); // 20 seconds timeout for login
 
     if (response.success && response.data) {
       // API thật trả về { accessToken, refreshToken, ... } thay vì { token, refreshToken, ... }
@@ -250,6 +299,9 @@ class FilmZoneApi {
         tokenExpiration: loginData.accessTokenExpiresAt || loginData.tokenExpiration || '',
         refreshTokenExpiration: loginData.refreshTokenExpiresAt || loginData.refreshTokenExpiration || '',
         user: loginData.user, // May be undefined for real API
+        // Pass-through permissions list from backend (used for client-side gating)
+        permissions: loginData.permissions,
+
       };
       
       this.setToken(mappedData.token);
@@ -268,12 +320,13 @@ class FilmZoneApi {
   /**
    * POST /login/login/mobile/google
    * Sign in with Google
+   * Uses longer timeout (20s) as Google login may take longer due to authentication processing
    */
   async loginWithGoogle(): Promise<FilmZoneResponse<LoginResponse>> {
     const response = await this.request<any>('/login/login/mobile/google', {
       method: 'POST',
       body: JSON.stringify({}),
-    });
+    }, 20000); // 20 seconds timeout for Google login
 
     if (response.success && response.data) {
       // API thật trả về { accessToken, refreshToken, ... } thay vì { token, refreshToken, ... }
@@ -303,7 +356,9 @@ class FilmZoneApi {
   }
 
   /**
-   * POST /api/Auth/RefreshToken
+   * POST /login/auth/refresh
+   * Refresh access token using refresh token
+   * Also updates permissions if included in response
    */
   async refreshAccessToken(): Promise<FilmZoneResponse<LoginResponse>> {
     if (!this.refreshToken) {
@@ -314,14 +369,22 @@ class FilmZoneApi {
       };
     }
 
-    const response = await this.request<LoginResponse>('/api/Auth/RefreshToken', {
+    // Aligned with latest OpenAPI spec
+    // Uses longer timeout (20s) as token refresh may take longer
+    const response = await this.request<LoginResponse>('/login/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken: this.refreshToken }),
-    });
+    }, 20000); // 20 seconds timeout for token refresh
 
     if (response.success && response.data) {
       this.setToken(response.data.token);
       this.setRefreshToken(response.data.refreshToken);
+      
+      // Update permissions if included in refresh response
+      if (Array.isArray((response.data as any).permissions)) {
+        // Permissions are updated in response, but we don't store them here
+        // AuthContext will handle updating permissions from this response
+      }
     }
 
     return response;
@@ -426,6 +489,22 @@ class FilmZoneApi {
       type: 'image/jpeg',
     } as any);
 
+    // Client-side permission guard (UX) for multipart request
+    const matched = matchApiPermission('PUT', '/user/update/profile');
+    const { permissions } = await this.readAuthState();
+    const token = this.token;
+    // multipart is a PUT action => keep client-side throw when lacking permission
+    if (matched && matched.entry.permission && !matched.entry.isPublic) {
+      if (!this.hasPermission(permissions, matched.entry.permission)) {
+        throw new PermissionDeniedError({
+          requiredPermission: matched.entry.permission,
+          method: 'PUT',
+          path: matched.path,
+          message: 'Nội dung dành cho tài khoản cấp cao hơn. Vui lòng nâng cấp để sử dụng.',
+        });
+      }
+    }
+
     const url = `${this.config.baseURL}/user/update/profile`;
 
     try {
@@ -433,7 +512,7 @@ class FilmZoneApi {
         method: 'PUT',
         headers: {
           Accept: 'application/json',
-          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: formData,
       });
@@ -703,7 +782,9 @@ class FilmZoneApi {
    * Legacy method
    */
   async getMoviesByCategory(categoryId: number): Promise<FilmZoneResponse<MovieDTO[]>> {
-    // Use mainScreen and filter by tag if needed
+    // This is a legacy method, for now it returns main screen movies.
+    // To implement fully, one would call getMoviesByTag(categoryId)
+    console.log('getMoviesByCategory called with categoryId:', categoryId);
     return this.getMoviesMainScreen();
   }
 
@@ -1515,10 +1596,10 @@ class FilmZoneApi {
 
   /**
    * GET /movie/Tag/GetAllTags/getALlTags
-   * Uses longer timeout (20s) as this endpoint may be slow
+   * Uses longer timeout (30s) as this endpoint may be slow
    */
   async getAllTags(): Promise<FilmZoneResponse<TagDTO[]>> {
-    return this.request<TagDTO[]>('/movie/Tag/GetAllTags/getALlTags', {}, 20000);
+    return this.request<TagDTO[]>('/movie/Tag/GetAllTags/getALlTags', {}, 30000); // 30 seconds timeout
   }
 
   /**
@@ -1554,9 +1635,10 @@ class FilmZoneApi {
 
   /**
    * GET /api/plans/all
+   * Uses longer timeout (30s) as this endpoint may be slow
    */
   async getAllPlans(): Promise<FilmZoneResponse<any[]>> {
-    return this.request<any[]>('/api/plans/all');
+    return this.request<any[]>('/api/plans/all', {}, 30000); // 30 seconds timeout
   }
 
   /**
@@ -1582,10 +1664,10 @@ class FilmZoneApi {
 
   /**
    * GET /movie/Region/GetAllRegions/getAll
-   * Uses longer timeout (20s) as this endpoint may be slow
+   * Uses longer timeout (30s) as this endpoint may be slow
    */
   async getAllRegions(): Promise<FilmZoneResponse<RegionDTO[]>> {
-    return this.request<RegionDTO[]>('/movie/Region/GetAllRegions/getAll', {}, 20000);
+    return this.request<RegionDTO[]>('/movie/Region/GetAllRegions/getAll', {}, 30000); // 30 seconds timeout
   }
 
   /**
@@ -1640,7 +1722,7 @@ class FilmZoneApi {
     };
   }
 
-  async addReview(reviewData: any): Promise<FilmZoneResponse<any>> {
+  async addReview(_reviewData: any): Promise<FilmZoneResponse<any>> {
     // Not in Swagger - might use comments or user ratings
     return {
       errorCode: 501,
@@ -1672,11 +1754,11 @@ class FilmZoneApi {
   }
 
   async addToFavorites(userId: string, movieId: string): Promise<FilmZoneResponse<SavedMovieDTO>> {
-    return this.addToSavedMovies(parseInt(movieId));
+    return this.addToSavedMovies(parseInt(movieId), parseInt(userId));
   }
 
   async removeFromFavorites(userId: string, movieId: string): Promise<FilmZoneResponse<any>> {
-    return this.removeFromSavedMovies(parseInt(movieId));
+    return this.removeFromSavedMovies(parseInt(movieId), parseInt(userId));
   }
 
   // ==================== PAYMENT APIs ====================
@@ -1752,6 +1834,54 @@ class FilmZoneApi {
       durationSeconds: null,
       watchProgressID: historyId,
     });
+  }
+
+  // ==================== PERMISSION APIs ====================
+
+  /**
+   * GET /permissions/getbyUserID/{ID}
+   * Lấy danh sách permissions của user từ backend
+   */
+  async getPermissionsByUserID(userID: number): Promise<FilmZoneResponse<string[]>> {
+    const response = await this.request<any>(`/permissions/getbyUserID/${userID}`);
+    
+    // Backend có thể trả về array of permission objects hoặc array of strings
+    // Cần parse response để extract permission codes
+    if (response.data && Array.isArray(response.data)) {
+      const permissions = response.data.map((p: any) => {
+        // Nếu là string, trả về trực tiếp
+        if (typeof p === 'string') {
+          return p;
+        }
+        // Nếu là object, lấy code hoặc permissionCode
+        return p.code || p.permissionCode || p.permission || p.name || '';
+      }).filter((p: string) => p !== ''); // Filter out empty strings
+      
+      return { ...response, data: permissions };
+    }
+    
+    return { ...response, data: [] };
+  }
+
+  /**
+   * GET /permissions/getbyRoleID/{ID}
+   * Lấy danh sách permissions của role từ backend
+   */
+  async getPermissionsByRoleID(roleID: number): Promise<FilmZoneResponse<string[]>> {
+    const response = await this.request<any>(`/permissions/getbyRoleID/${roleID}`);
+    
+    if (response.data && Array.isArray(response.data)) {
+      const permissions = response.data.map((p: any) => {
+        if (typeof p === 'string') {
+          return p;
+        }
+        return p.code || p.permissionCode || p.permission || p.name || '';
+      }).filter((p: string) => p !== '');
+      
+      return { ...response, data: permissions };
+    }
+    
+    return { ...response, data: [] };
   }
 
 }

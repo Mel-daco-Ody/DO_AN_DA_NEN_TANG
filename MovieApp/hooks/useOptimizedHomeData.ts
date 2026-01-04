@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { HomeData, MediaItem, Tag, Region, Person, HeroSlide } from '../types/AppTypes';
 import { logger } from '../utils/logger';
 import { apiCache, CACHE_KEYS, CACHE_TTL } from '../utils/apiCache';
+import { useApiErrorHandler } from './useApiErrorHandler';
 
 // Pick a random subset of slides (default 3) for hero carousel
 const pickRandomSlides = (slides: HeroSlide[], count = 3): HeroSlide[] => {
@@ -27,6 +28,7 @@ interface UseOptimizedHomeDataReturn {
 }
 
 export const useOptimizedHomeData = (userId?: number): UseOptimizedHomeDataReturn => {
+  const { handleApiError } = useApiErrorHandler();
   const [data, setData] = useState<HomeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,17 +157,28 @@ export const useOptimizedHomeData = (userId?: number): UseOptimizedHomeDataRetur
           });
           
         } catch (err) {
-          logger.error('Error loading additional data', err);
+          // Prefer upgrade modal for permission errors
+          const handled = handleApiError(err);
+          if (!handled) {
+            logger.error('Error loading additional data', err);
+          }
         }
       };
       
-      // Start loading other data in background
-      loadOtherData();
+      // Start loading other data in background, but don't let it crash the main data load
+      loadOtherData().catch(err => {
+        logger.warn('Non-critical data failed to load in background', err);
+        handleApiError(err); // Still show upgrade modal if needed
+      });
       
     } catch (err) {
+      // If it's a permission error, show global upgrade modal and keep UI usable.
+      const handled = handleApiError(err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load home data';
-      setError(errorMessage);
-      logger.error('Error loading home data', err);
+      setError(handled ? null : errorMessage);
+      if (!handled) {
+        logger.error('Error loading home data', err);
+      }
     } finally {
       setIsLoading(false);
     }

@@ -17,6 +17,8 @@ import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import filmzoneApi from '../services/filmzone-api';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { PAYMENT_CHECKOUT } from '../utils/permissionUi';
 
 interface PaymentMethod {
   id: string;
@@ -38,6 +40,7 @@ const paymentMethods: PaymentMethod[] = [
 
 export default function PaymentServiceScreen() {
   const { updateSubscription, authState, updateUser } = useAuth();
+  const { guardAction } = usePermissionGuard();
   const [selectedMethod, setSelectedMethod] = useState<string>('');
   const [selectedPlan, setSelectedPlan] = useState<string>('');
   const [cardNumber, setCardNumber] = useState('');
@@ -226,17 +229,18 @@ export default function PaymentServiceScreen() {
     }
 
   console.log('Payment: Validation passed, processing payment...');
-    setIsProcessing(true);
-    
-    try {
-      const priceObj = planPriceMap[selectedPlan];
-      if (!priceObj || !priceObj.priceId) {
-        Alert.alert('Error', 'Price information not available for this plan.');
-        return;
-      }
+    guardAction(PAYMENT_CHECKOUT, async () => {
+      setIsProcessing(true);
+      try {
+        const priceObj = planPriceMap[selectedPlan];
+        if (!priceObj || !priceObj.priceId) {
+          Alert.alert('Error', 'Price information not available for this plan.');
+          setIsProcessing(false); // Reset processing state
+          return;
+        }
 
-      // VNPay checkout
-      const response = await filmzoneApi.createVnPayCheckout({ priceId: Number(priceObj.priceId) });
+        // VNPay checkout
+        const response = await filmzoneApi.createVnPayCheckout({ priceId: Number(priceObj.priceId) });
       console.log('VNPay checkout response:', JSON.stringify(response, null, 2));
       const isOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
 
@@ -287,6 +291,7 @@ export default function PaymentServiceScreen() {
     } finally {
       setIsProcessing(false);
     }
+    });
   };
 
   const goBack = async () => {

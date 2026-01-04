@@ -10,6 +10,8 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { useSavedMoviesContext } from '../../../contexts/SavedMoviesContext';
 import { useToast } from '../../../contexts/ToastContext';
+import { usePermissionGuard } from '../../../hooks/usePermissionGuard';
+import { COMMENT_CREATE, COMMENT_UPDATE, COMMENT_DELETE } from '../../../utils/permissionUi';
 import * as Haptics from 'expo-haptics';
 import filmzoneApi from '../../../services/filmzone-api';
 
@@ -26,12 +28,15 @@ export default function SeriesDetailsScreen() {
   const { t } = useLanguage();
   const { refreshSavedMovies, isMovieSaved, addSavedMovie, removeSavedMovie } = useSavedMoviesContext();
   const { showSuccess, showError, showWarning } = useToast();
+  const { guardAction } = usePermissionGuard();
   const seriesId = parseInt(id as string);
   const [commentText, setCommentText] = React.useState('');
   const [comments, setComments] = React.useState<any[]>([]);
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
   const [replyingToCommentID, setReplyingToCommentID] = React.useState<number | null>(null);
   const [replyText, setReplyText] = React.useState('');
+  const [editingCommentID, setEditingCommentID] = React.useState<number | null>(null);
+  const [editCommentText, setEditCommentText] = React.useState('');
   const [selectedSeason, setSelectedSeason] = React.useState(1);
   const [seriesData, setSeriesData] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -339,66 +344,148 @@ export default function SeriesDetailsScreen() {
       return;
     }
     
-    try {
-      const response = await filmzoneApi.createComment({
-        movieID: parseInt(id as string),
-        userID: authState.user.userID,
-        content: text,
-        parentID: parentCommentID,
-        likeCount: 0,
-      });
-      
-      const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-      if (responseOk) {
-        showSuccess('Reply posted successfully!');
-        // Reload comments to get updated list
-        const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
-        const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
-        if (commentsOk && commentsResponse.data) {
-          const commentsData = commentsResponse.data || [];
-          // Sort comments by createdAt descending (newest first)
-          const sortedComments = [...commentsData].sort((a, b) => {
-            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return dateB - dateA; // Descending order (newest first)
-          });
-          setComments(sortedComments);
-          
-          // Fetch user data for each unique userID in comments
-          const uniqueUserIDs = [...new Set(
-            commentsData
-              .map((c: any) => c.userID)
-              .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
-              .map((id: any) => Number(id))
-          )];
-          
-          const userDataMap = new Map<number, any>();
-          
-          await Promise.all(
-            uniqueUserIDs.map(async (userID: number) => {
-              try {
-                const userResponse = await filmzoneApi.getUserById(userID);
-                const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
-                if (userOk && userResponse.data) {
-                  userDataMap.set(userID, userResponse.data);
+    const userID = authState.user.userID; // Store userID to avoid null check issues in callback
+    guardAction(COMMENT_CREATE, async () => {
+      try {
+        const response = await filmzoneApi.createComment({
+          movieID: parseInt(id as string),
+          userID: userID,
+          content: text,
+          parentID: parentCommentID,
+          likeCount: 0,
+        });
+        
+        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (responseOk) {
+          showSuccess('Reply posted successfully!');
+          // Reload comments to get updated list
+          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+          if (commentsOk && commentsResponse.data) {
+            const commentsData = commentsResponse.data || [];
+            // Sort comments by createdAt descending (newest first)
+            const sortedComments = [...commentsData].sort((a, b) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateB - dateA; // Descending order (newest first)
+            });
+            setComments(sortedComments);
+            
+            // Fetch user data for each unique userID in comments
+            const uniqueUserIDs = [...new Set(
+              commentsData
+                .map((c: any) => c.userID)
+                .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+                .map((id: any) => Number(id))
+            )];
+            
+            const userDataMap = new Map<number, any>();
+            
+            await Promise.all(
+              uniqueUserIDs.map(async (userID: number) => {
+                try {
+                  const userResponse = await filmzoneApi.getUserById(userID);
+                  const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                  if (userOk && userResponse.data) {
+                    userDataMap.set(userID, userResponse.data);
+                  }
+                } catch (err) {
+                  console.error(`Error loading user data for userID ${userID}:`, err);
                 }
-              } catch (err) {
-                console.error(`Error loading user data for userID ${userID}:`, err);
-              }
-            })
-          );
-          
-          setCommentUsers(userDataMap);
+              })
+            );
+            
+            setCommentUsers(userDataMap);
+          }
+          setReplyText('');
+          setReplyingToCommentID(null);
+        } else {
+          showError(response.errorMessage || 'Failed to post reply');
         }
-        setReplyText('');
-        setReplyingToCommentID(null);
-      } else {
-        showError(response.errorMessage || 'Failed to post reply');
+      } catch (error) {
+        console.error('Error replying to comment:', error);
+        showError('Failed to post reply');
       }
-    } catch (error) {
-      console.error('Error replying to comment:', error);
-      showError('Failed to post reply');
+    });
+  };
+
+  const handleEditComment = async (commentID: number) => {
+    const comment = comments.find((c: any) => c.commentID === commentID);
+    if (!comment) return;
+    
+    const text = editCommentText.trim();
+    if (!text) return;
+    
+    if (!authState.user || !authState.user.userID) {
+      showWarning('Please login to edit comments');
+      return;
     }
+    
+    const userID = authState.user.userID;
+    guardAction(COMMENT_UPDATE, async () => {
+      try {
+        const response = await filmzoneApi.updateComment(commentID, {
+          userID: userID,
+          content: text,
+          parentID: comment.parentID || null,
+          likeCount: comment.likeCount || 0,
+        } as any);
+        
+        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (responseOk) {
+          showSuccess('Comment updated successfully!');
+          // Reload comments
+          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+          if (commentsOk && commentsResponse.data) {
+            const commentsData = commentsResponse.data || [];
+            const sortedComments = [...commentsData].sort((a: any, b: any) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateB - dateA;
+            });
+            setComments(sortedComments);
+          }
+          setEditingCommentID(null);
+          setEditCommentText('');
+        }
+      } catch (error) {
+        console.error('Error updating comment:', error);
+        showError('Failed to update comment. Please try again.');
+      }
+    });
+  };
+
+  const handleDeleteComment = async (commentID: number) => {
+    if (!authState.user || !authState.user.userID) {
+      showWarning('Please login to delete comments');
+      return;
+    }
+    
+    guardAction(COMMENT_DELETE, async () => {
+      try {
+        const response = await filmzoneApi.deleteComment(commentID);
+        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (responseOk) {
+          showSuccess('Comment deleted successfully!');
+          // Reload comments
+          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+          if (commentsOk && commentsResponse.data) {
+            const commentsData = commentsResponse.data || [];
+            const sortedComments = [...commentsData].sort((a: any, b: any) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateB - dateA;
+            });
+            setComments(sortedComments);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting comment:', error);
+        showError('Failed to delete comment. Please try again.');
+      }
+    });
   };
 
   const handleAddRating = async (stars: number) => {
@@ -883,67 +970,73 @@ export default function SeriesDetailsScreen() {
               onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-                
+
                 if (!authState.user || !authState.user.userID) {
+                  showWarning('Please login to comment');
                   return;
                 }
-                
-                try {
-                  const response = await filmzoneApi.createComment({
-                    movieID: parseInt(id as string),
-                    userID: authState.user.userID,
-                    content: text,
-                    likeCount: 0,
-                  });
-                  
-                  const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-                  if (responseOk) {
-                    // Reload comments to get updated list
-                    const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
-                    const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
-                    if (commentsOk && commentsResponse.data) {
-                      const commentsData = commentsResponse.data || [];
-                      // Sort comments by createdAt descending (newest first)
-          const sortedComments = [...commentsData].sort((a, b) => {
-            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return dateB - dateA; // Descending order (newest first)
-          });
-          setComments(sortedComments);
-                      
-                      // Fetch user data for each unique userID in comments
-                      // Filter out invalid userIDs (0, null, undefined, negative)
-                      const uniqueUserIDs = [...new Set(
-                        commentsData
-                          .map((c: any) => c.userID)
-                          .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
-                          .map((id: any) => Number(id))
-                      )];
-                      
-                      const userDataMap = new Map<number, any>();
-                      
-                      // Fetch user data for all unique userIDs
-                      await Promise.all(
-                        uniqueUserIDs.map(async (userID: number) => {
-                          try {
-                            const userResponse = await filmzoneApi.getUserById(userID);
-                            const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
-                            if (userOk && userResponse.data) {
-                              userDataMap.set(userID, userResponse.data);
+
+                const userID = authState.user.userID; // Store userID to avoid null check issues in callback
+                // Keep UI visible; only gate when user clicks "Post"
+                guardAction(COMMENT_CREATE, async () => {
+                  try {
+                    const response = await filmzoneApi.createComment({
+                      movieID: parseInt(id as string),
+                      userID: userID,
+                      content: text,
+                      likeCount: 0,
+                    });
+                    
+                    const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+                    if (responseOk) {
+                      // Reload comments to get updated list
+                      const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+                      const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+                      if (commentsOk && commentsResponse.data) {
+                        const commentsData = commentsResponse.data || [];
+                        // Sort comments by createdAt descending (newest first)
+                        const sortedComments = [...commentsData].sort((a, b) => {
+                          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                          return dateB - dateA; // Descending order (newest first)
+                        });
+                        setComments(sortedComments);
+                        
+                        // Fetch user data for each unique userID in comments
+                        // Filter out invalid userIDs (0, null, undefined, negative)
+                        const uniqueUserIDs = [...new Set(
+                          commentsData
+                            .map((c: any) => c.userID)
+                            .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+                            .map((id: any) => Number(id))
+                        )];
+                        
+                        const userDataMap = new Map<number, any>();
+                        
+                        // Fetch user data for all unique userIDs
+                        await Promise.all(
+                          uniqueUserIDs.map(async (userID: number) => {
+                            try {
+                              const userResponse = await filmzoneApi.getUserById(userID);
+                              const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                              if (userOk && userResponse.data) {
+                                userDataMap.set(userID, userResponse.data);
+                              }
+                            } catch (err) {
+                              console.error(`Error loading user data for userID ${userID}:`, err);
                             }
-                          } catch (err) {
-                            console.error(`Error loading user data for userID ${userID}:`, err);
-                          }
-                        })
-                      );
-                      
-                      setCommentUsers(userDataMap);
+                          })
+                        );
+                        
+                        setCommentUsers(userDataMap);
+                      }
+                      setCommentText('');
                     }
-                    setCommentText('');
+                  } catch (error) {
+                    console.error('Error creating comment:', error);
+                    showError('Failed to create comment. Please try again.');
                   }
-                } catch (error) {
-                  console.error('Error creating comment:', error);
-                }
+                });
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
@@ -984,7 +1077,40 @@ export default function SeriesDetailsScreen() {
                       {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
                     </Text>
                   </View>
-                  <Text style={styles.commentText}>{c.content}</Text>
+                  {editingCommentID === c.commentID ? (
+                    <View style={styles.editCommentContainer}>
+                      <TextInput
+                        placeholder="Edit your comment..."
+                        placeholderTextColor="#8e8e93"
+                        value={editCommentText}
+                        onChangeText={setEditCommentText}
+                        multiline
+                        style={styles.editCommentInput}
+                      />
+                      <View style={styles.editCommentActions}>
+                        <Pressable
+                          onPress={() => {
+                            setEditingCommentID(null);
+                            setEditCommentText('');
+                          }}
+                          style={({ pressed }) => [styles.editCommentCancelBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <Text style={styles.editCommentCancelText}>Cancel</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleEditComment(c.commentID)}
+                          style={({ pressed }) => [styles.editCommentSaveBtn, pressed && { opacity: 0.9 }]}
+                          disabled={!editCommentText.trim()}
+                        >
+                          <Text style={[styles.editCommentSaveText, !editCommentText.trim() && { opacity: 0.5 }]}>
+                            Save
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.commentText}>{c.content}</Text>
+                  )}
                   {!isReply && (
                     <View style={styles.commentActions}>
                       <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
@@ -1006,6 +1132,39 @@ export default function SeriesDetailsScreen() {
                           {replyingToCommentID === c.commentID ? 'Hủy' : 'Trả lời'}
                         </Text>
                       </Pressable>
+                      {/* Edit/Delete buttons - only show if user is the owner */}
+                      {authState.user?.userID && Number(c.userID) === authState.user.userID && (
+                        <>
+                          <Pressable 
+                            style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}
+                            onPress={() => {
+                              setEditingCommentID(c.commentID);
+                              setEditCommentText(c.content);
+                            }}
+                          >
+                            <Ionicons name="create-outline" size={16} color="#8e8e93" />
+                          </Pressable>
+                          <Pressable 
+                            style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}
+                            onPress={() => {
+                              Alert.alert(
+                                'Delete Comment',
+                                'Are you sure you want to delete this comment?',
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  { 
+                                    text: 'Delete', 
+                                    style: 'destructive',
+                                    onPress: () => handleDeleteComment(c.commentID)
+                                  }
+                                ]
+                              );
+                            }}
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#e50914" />
+                          </Pressable>
+                        </>
+                      )}
                     </View>
                   )}
                   {!isReply && replyingToCommentID === c.commentID && (
@@ -1566,6 +1725,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 8,
+  },
+  editCommentContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  editCommentInput: {
+    backgroundColor: '#2b2b31',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  editCommentActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    gap: 8,
+  },
+  editCommentCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  editCommentCancelText: {
+    color: '#8e8e93',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editCommentSaveBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#e50914',
+  },
+  editCommentSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   replyCancelBtn: {
     paddingVertical: 8,

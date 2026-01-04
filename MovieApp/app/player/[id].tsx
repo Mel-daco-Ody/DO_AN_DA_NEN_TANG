@@ -9,6 +9,8 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import FlixGoLogo from '../../components/FlixGoLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { usePermissionGuard } from '../../hooks/usePermissionGuard';
+import { SAVED_MOVIE_MANAGE, SAVED_MOVIE_READ } from '../../utils/permissionUi';
 import Slider from '@react-native-community/slider';
 import { filmzoneApi } from '../../services/filmzone-api';
 

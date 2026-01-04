@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotifications } from '../contexts/NotificationContext';
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { SUBSCRIPTION_CANCEL, ORDER_READ_OWN, INVOICE_READ_OWN } from '../utils/permissionUi';
 import { movieAppApi } from '../services/api';
 import filmzoneApi from '../services/filmzone-api';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +22,7 @@ export default function ProfileScreen() {
   const { authState, signOut: authSignOut, updateSubscription, updateUser } = useAuth();
   const { t } = useLanguage();
   const { theme, toggleTheme, isDarkMode } = useTheme();
+  const { guardAction } = usePermissionGuard();
   const { 
     notificationsEnabled, 
     notificationSettings,
@@ -1595,7 +1598,11 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Pressable 
               style={styles.billingHistoryButton}
-              onPress={() => setShowBillingHistory(!showBillingHistory)}
+              onPress={() => {
+                guardAction(ORDER_READ_OWN, () => {
+                  setShowBillingHistory(!showBillingHistory);
+                });
+              }}
             >
               <Text style={styles.billingHistoryButtonText}>
                 {showBillingHistory ? 'Hide' : 'Show'} Billing History ({billingHistory.length})
@@ -1648,24 +1655,25 @@ export default function ProfileScreen() {
             <Pressable 
               style={({ pressed }) => [styles.dangerBtn, pressed && { opacity: 0.9 }]}
               onPress={() => {
-                Alert.alert(
-                  'Cancel Subscription',
-                  'Are you sure you want to cancel your subscription? Paid plans will be cancelled and you will return to the Starter plan.',
-                  [
-                    { text: 'Keep Subscription', style: 'cancel' },
-                    { 
-                      text: 'Cancel Subscription', 
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          const userId = authState.user?.userID;
-                          if (!userId) {
-                            Alert.alert('Error', 'Missing user info. Please sign in again.');
-                            return;
-                          }
+                guardAction(SUBSCRIPTION_CANCEL, () => {
+                  Alert.alert(
+                    'Cancel Subscription',
+                    'Are you sure you want to cancel your subscription? Paid plans will be cancelled and you will return to the Starter plan.',
+                    [
+                      { text: 'Keep Subscription', style: 'cancel' },
+                      { 
+                        text: 'Cancel Subscription', 
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const userId = authState.user?.userID;
+                            if (!userId) {
+                              Alert.alert('Error', 'Missing user info. Please sign in again.');
+                              return;
+                            }
 
-                          // Call cancel subscription API
-                          const cancelRes = await filmzoneApi.cancelSubscription(userId);
+                            // Call cancel subscription API
+                            const cancelRes = await filmzoneApi.cancelSubscription(userId);
                           const cancelOk = (cancelRes as any).success === true || (cancelRes.errorCode >= 200 && cancelRes.errorCode < 300);
                           if (!cancelOk) {
                             Alert.alert('Error', cancelRes.errorMessage || 'Failed to cancel subscription.');
@@ -1721,6 +1729,7 @@ export default function ProfileScreen() {
                     }
                   ]
                 );
+                });
               }}
             >
               <Text style={styles.dangerBtnText}>Cancel Subscription</Text>

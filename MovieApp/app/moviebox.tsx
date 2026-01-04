@@ -12,19 +12,24 @@ import { MovieBoxEmptyState, LoginRequiredState } from '../components/EmptyState
 import { GridSkeleton } from '../components/SkeletonPlaceholder';
 import { NetworkErrorState, ServerErrorState } from '../components/ErrorState';
 import { AnimatedCard } from '../components/AnimatedPressable';
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { SAVED_MOVIE_READ } from '../utils/permissionUi';
 
 export default function MovieBoxScreen() {
   const { authState } = useAuth();
   const { theme } = useTheme();
   const { t } = useLanguage();
   const { removeSavedMovie, refreshSavedMovies, savedMovieIds } = useSavedMoviesContext();
+  const { guardAction } = usePermissionGuard();
+
+  const canReadSavedMovies = (authState.permissions || []).includes(SAVED_MOVIE_READ);
 
   // Ensure saved ids are loaded from backend before filtering results
   React.useEffect(() => {
-    if (authState.user?.userID) {
+    if (authState.user?.userID && canReadSavedMovies) {
       refreshSavedMovies();
     }
-  }, [authState.user?.userID, refreshSavedMovies]);
+  }, [authState.user?.userID, refreshSavedMovies, canReadSavedMovies]);
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'rating'>('date');
   const [savedMovies, setSavedMovies] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +40,14 @@ export default function MovieBoxScreen() {
     const loadSavedMovies = async () => {
       if (!authState.user || !authState.user.userID) {
         setIsLoading(false);
+        return;
+      }
+
+      // VIP-gated feature: still show UI, but don't auto-call API when lacking permission
+      if (!canReadSavedMovies) {
+        setIsLoading(false);
+        setError(null);
+        setSavedMovies([]);
         return;
       }
       
@@ -106,20 +119,29 @@ export default function MovieBoxScreen() {
   const retryLoadMovies = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     if (!authState.user || !authState.user.userID) {
       setIsLoading(false);
       return;
     }
-    
+
+    // Only show modal when user clicks retry
+    if (!canReadSavedMovies) {
+      setIsLoading(false);
+      guardAction(SAVED_MOVIE_READ, () => {
+        // no-op: guardAction will show modal
+      });
+      return;
+    }
+
     try {
       const { filmzoneApi } = await import('../services/filmzone-api');
       console.log('MovieBox: Retrying load saved movies for user:', authState.user.userID);
-      
+
       const response = await filmzoneApi.getSavedMoviesByUserID(authState.user.userID);
-      
+
       console.log('MovieBox: Retry response:', JSON.stringify(response, null, 2));
-      
+
       if (response.errorCode === 200) {
         setSavedMovies(response.data || []);
       } else {
@@ -384,6 +406,19 @@ export default function MovieBoxScreen() {
                 subtitle={t('moviebox.login_required_subtitle')}
                 actionText={t('moviebox.sign_in')}
                 onLoginPress={() => router.push('/auth/signin')} 
+              />
+            ) : !canReadSavedMovies ? (
+              <MovieBoxEmptyState
+                title={t('moviebox.vip_required_title') || 'Tính năng VIP'}
+                subtitle={t('moviebox.vip_required_subtitle') || 'Nâng cấp tài khoản để lưu và quản lý những bộ phim yêu thích của bạn.'}
+                actionText={t('moviebox.upgrade') || 'Nâng cấp ngay'}
+                onBrowsePress={() => {
+                  guardAction(SAVED_MOVIE_READ, () => {
+                    // This part should ideally not be reached if permission is missing.
+                    // If called, it means the user has permission, so we can retry.
+                    retryLoadMovies();
+                  });
+                }}
               />
             ) : (
               <MovieBoxEmptyState 

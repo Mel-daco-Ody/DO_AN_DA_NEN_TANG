@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import filmzoneApi from '../services/filmzone-api';
+import { usePermissionGuard } from '../hooks/usePermissionGuard';
+import { SAVED_MOVIE_MANAGE, SAVED_MOVIE_READ } from '../utils/permissionUi';
 
 interface SavedMoviesContextType {
   savedMovieIds: Set<number>;
@@ -28,6 +30,7 @@ interface SavedMoviesProviderProps {
 
 export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ children }) => {
   const { authState } = useAuth();
+  const { guardAction } = usePermissionGuard();
   const [savedMovieIds, setSavedMovieIds] = useState<Set<number>>(new Set());
   const [savedMovieIdMap, setSavedMovieIdMap] = useState<Map<number, number>>(new Map());
 
@@ -62,7 +65,9 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
     return savedMovieIds.has(movieId);
   }, [savedMovieIds]);
 
-  const removeSavedMovie = useCallback(async (movieId: number) => {
+    const removeSavedMovie = useCallback((movieId: number) => {
+    guardAction(SAVED_MOVIE_MANAGE, async () => {
+
     try {
       // Get savedMovieID from map
       let savedMovieID = savedMovieIdMap.get(movieId);
@@ -153,9 +158,12 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
       // Don't throw error - let optimistic update work
       // The next refresh will sync with server state
     }
-  }, [authState.user?.userID, savedMovieIdMap, refreshSavedMovies]);
+    });
+  }, [authState.user?.userID, savedMovieIdMap, refreshSavedMovies, guardAction]);
 
-  const addSavedMovie = useCallback(async (movieId: number) => {
+  const addSavedMovie = useCallback((movieId: number) => {
+    guardAction(SAVED_MOVIE_MANAGE, async () => {
+
     try {
       if (!authState.user?.userID) {
         throw new Error('User not authenticated');
@@ -204,7 +212,8 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
       console.error('SavedMoviesContext: Error adding saved movie:', error);
       throw error;
     }
-  }, [authState.user?.userID, refreshSavedMovies]);
+    });
+  }, [authState.user?.userID, refreshSavedMovies, guardAction]);
 
   const getSavedMovieID = useCallback((movieId: number): number | undefined => {
     return savedMovieIdMap.get(movieId);

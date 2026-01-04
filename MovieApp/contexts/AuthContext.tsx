@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthUser } from '../shared-data';
 import { movieAppApi } from '../services/mock-api';
@@ -15,6 +15,11 @@ interface AuthState {
   user: AuthUser | null;
   token: string | null;
   refreshToken: string | null;
+  /**
+   * Permission codes returned from backend login response.
+   * Used for client-side gating (UX) before calling protected APIs.
+   */
+  permissions: string[];
   requiresMfa: boolean;
   mfaTicket: string | null;
 }
@@ -28,6 +33,7 @@ interface AuthContextType {
   updateUser: (user: Partial<AuthUser>) => void;
   updateSubscription: (plan: 'starter' | 'premium' | 'cinematic') => Promise<void>;
   refreshAuthToken: () => Promise<boolean>;
+  refreshUserPermissions: () => Promise<boolean>;
 }
 
 const defaultAuthState: AuthState = {
@@ -35,6 +41,7 @@ const defaultAuthState: AuthState = {
   user: null,
   token: null,
   refreshToken: null,
+  permissions: [],
   requiresMfa: false,
   mfaTicket: null,
 };
@@ -82,7 +89,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             });
             
             // Validate that we have required data
-            if (parsedState.isAuthenticated && parsedState.token && parsedState.user?.userID) {
+            if (parsedState.isAuthenticated && parsedState.token && (parsedState.user?.userID || parsedState.user?.id)) {
+              // Backward-compat: older stored states may not have permissions
+              if (!Array.isArray(parsedState.permissions)) {
+                parsedState.permissions = [];
+              }
               // Restore token to API client
               movieAppApi.setToken(parsedState.token);
               filmzoneApi.setToken(parsedState.token);
@@ -139,12 +150,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Helper function to map UserDTO to AuthUser
   const mapUserDTOToAuthUser = (userDTO: any): AuthUser | null => {
-    if (!userDTO || !userDTO.userID) {
+    // Accept both userID (from /user/me) and id (from login response)
+    const userId = userDTO?.userID ?? userDTO?.id;
+    if (!userDTO || !userId) {
       return null;
     }
     
     return {
-      userID: userDTO.userID,
+      userID: userId,
       userName: userDTO.userName || '',
       firstName: userDTO.firstName,
       lastName: userDTO.lastName,
@@ -186,7 +199,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signIn = async (userName: string, password: string, rememberMeParam: boolean = false) => {
     try {
       console.log('AuthContext: Starting login for:', userName);
-      const response = await movieAppApi.login(userName, password);
+      const response = await filmzoneApi.login({ userName, password });
       
       console.log('AuthContext: Login response:', JSON.stringify(response, null, 2));
       
@@ -199,6 +212,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // API mock trả về: { token, refreshToken, user, sessionId, deviceId, ... }
         const token = (loginData as any).accessToken || (loginData as any).token;
         const refreshToken = loginData.refreshToken;
+        const permissions: string[] = Array.isArray((loginData as any).permissions)
+          ? (loginData as any).permissions
+          : [];
         
         if (!token) {
           console.error('AuthContext: No token in login response');
@@ -209,7 +225,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         // Set token in API client immediately
-        movieAppApi.setToken(token);
+        // filmzoneApi is the source of truth for real backend calls
         filmzoneApi.setToken(token);
         console.log('AuthContext: Token set in API client');
         
@@ -273,7 +289,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Try to get user from API
         try {
           console.log('AuthContext: Fetching current user from API...');
-          const userResponse = await movieAppApi.getCurrentUser();
+          const userResponse = await filmzoneApi.getCurrentUser();
           console.log('AuthContext: getCurrentUser response:', JSON.stringify(userResponse, null, 2));
           
           if (userResponse.errorCode === 200 && userResponse.data) {
@@ -310,6 +326,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           user: userData,
           token: token,
           refreshToken: refreshToken,
+          permissions,
           requiresMfa: false,
           mfaTicket: null,
         };
@@ -366,6 +383,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Handle different response formats from API
         const token = (loginData as any).accessToken || (loginData as any).token;
         const refreshToken = loginData.refreshToken;
+        const permissions: string[] = Array.isArray((loginData as any).permissions)
+          ? (loginData as any).permissions
+          : [];
         
         if (!token) {
           console.error('AuthContext: No token in Google login response');
@@ -376,7 +396,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         // Set token in API client immediately
-        movieAppApi.setToken(token);
+        // filmzoneApi is the source of truth for real backend calls
         filmzoneApi.setToken(token);
         console.log('AuthContext: Token set in API client');
         
@@ -440,7 +460,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Try to get user from API
         try {
           console.log('AuthContext: Fetching current user from API...');
-          const userResponse = await movieAppApi.getCurrentUser();
+          const userResponse = await filmzoneApi.getCurrentUser();
           console.log('AuthContext: getCurrentUser response:', JSON.stringify(userResponse, null, 2));
           
           if (userResponse.errorCode === 200 && userResponse.data) {
@@ -478,6 +498,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           user: userData,
           token: token,
           refreshToken: refreshToken,
+          permissions,
           requiresMfa: false,
           mfaTicket: null,
         };
@@ -552,7 +573,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Try to get full user info from API
       if (!userData) {
         try {
-          const userResponse = await movieAppApi.getCurrentUser();
+          const userResponse = await filmzoneApi.getCurrentUser();
           if (userResponse.errorCode === 200 && userResponse.data) {
             userData = mapUserDTOToAuthUser(userResponse.data);
           }
@@ -569,11 +590,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const rememberMeFromPending = (pendingLogin as any)?.rememberMe ?? false;
       setRememberMe(rememberMeFromPending);
 
+      const permissions: string[] = Array.isArray((loginData as any).permissions)
+        ? (loginData as any).permissions
+        : [];
+
       const newAuthState = {
         isAuthenticated: true,
         user: userData,
         token: loginData.token,
         refreshToken: loginData.refreshToken,
+        permissions,
         requiresMfa: false,
         mfaTicket: null,
       };
@@ -601,13 +627,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signOut = async () => {
     try {
-      const { movieAppApi } = await import('../services/mock-api');
-      await movieAppApi.logout();
+      // Use real backend logout when available
+      await filmzoneApi.logout();
     } catch (error) {
       console.warn('Logout request failed:', error);
     } finally {
       // Clear token from API client
-      movieAppApi.setToken(null);
       filmzoneApi.setToken(null);
       // Clear auth state and storage
       setAuthState(defaultAuthState);
@@ -623,6 +648,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user: prev.user ? { ...prev.user, ...userUpdates } : null
     }));
   };
+
+  /**
+   * Refresh permissions từ backend
+   * Nên gọi sau khi:
+   * - App mở lại (on mount)
+   * - Sau khi subscription thay đổi
+   * - Sau khi admin thay đổi roles/permissions
+   */
+  const refreshPermissions = useCallback(async (): Promise<void> => {
+    if (!authState.user?.userID || !authState.isAuthenticated) {
+      return;
+    }
+
+    try {
+      const response = await filmzoneApi.getPermissionsByUserID(authState.user.userID);
+      if (response.errorCode === 200 && Array.isArray(response.data)) {
+        const newPermissions = response.data;
+        setAuthState(prev => ({
+          ...prev,
+          permissions: newPermissions,
+        }));
+        
+        // Update AsyncStorage
+        const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+            ...parsed,
+            permissions: newPermissions,
+          }));
+        }
+        
+        console.log('AuthContext: Permissions refreshed from backend', newPermissions);
+      }
+    } catch (error) {
+      console.error('AuthContext: Failed to refresh permissions:', error);
+      // Silent fail - không block user flow
+    }
+  }, [authState.user?.userID, authState.isAuthenticated]);
 
   const updateSubscription = async (plan: 'starter' | 'premium' | 'cinematic') => {
     if (!authState.user) return;
@@ -654,13 +718,85 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         subscription 
       } : null
     }));
+
+    // Sau khi update subscription thành công, refresh permissions
+    await refreshPermissions();
   };
 
   const refreshAuthToken = async () => {
-    // Mock implementation: movieAppApi does not expose a refreshToken method
-    console.warn('refreshAuthToken: refreshToken API not implemented in mock API');
-    return false;
+    try {
+      const res = await filmzoneApi.refreshAccessToken();
+      const ok = (res as any).success === true || (res.errorCode >= 200 && res.errorCode < 300);
+      if (!ok || !res.data?.token) return false;
+
+      // Extract permissions from refresh response if available
+      const permissionsFromResponse: string[] = Array.isArray((res.data as any).permissions)
+        ? (res.data as any).permissions
+        : [];
+
+      // Update API client token
+      filmzoneApi.setToken(res.data.token);
+
+      // Update auth state (update permissions if included in response)
+      setAuthState(prev => ({
+        ...prev,
+        token: res.data!.token,
+        refreshToken: res.data!.refreshToken ?? prev.refreshToken,
+        // Update permissions if included in refresh response, otherwise keep existing
+        permissions: permissionsFromResponse.length > 0 ? permissionsFromResponse : prev.permissions,
+      }));
+
+      // Persist if rememberMe is enabled
+      if (rememberMe) {
+        const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        const parsed = stored ? JSON.parse(stored) : null;
+        const next = {
+          ...(parsed || {}),
+          ...authState,
+          token: res.data!.token,
+          refreshToken: res.data!.refreshToken ?? authState.refreshToken,
+          permissions: permissionsFromResponse.length > 0 ? permissionsFromResponse : (parsed?.permissions || authState.permissions),
+        };
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+      }
+
+      // If permissions were not in refresh response, fetch them separately
+      if (permissionsFromResponse.length === 0 && authState.user?.userID) {
+        await refreshPermissions();
+      }
+
+      return true;
+    } catch (e) {
+      console.warn('refreshAuthToken failed', e);
+      return false;
+    }
   };
+
+  /**
+   * Manual refresh permissions option
+   * Returns true if successful, false otherwise
+   */
+  const refreshUserPermissions = async (): Promise<boolean> => {
+    try {
+      await refreshPermissions();
+      return true;
+    } catch (error) {
+      console.error('refreshUserPermissions failed:', error);
+      return false;
+    }
+  };
+
+  // Auto-refresh permissions khi app mở lại và user đã authenticated
+  useEffect(() => {
+    if (authState.isAuthenticated && authState.user?.userID) {
+      // Refresh permissions từ backend để đảm bảo sync
+      // Delay một chút để tránh race condition với initial load
+      const timer = setTimeout(() => {
+        refreshPermissions();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [authState.isAuthenticated, authState.user?.userID, refreshPermissions]);
 
   return (
     <AuthContext.Provider value={{
@@ -671,7 +807,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       signOut,
       updateUser,
       updateSubscription,
-      refreshAuthToken
+      refreshAuthToken,
+      refreshUserPermissions
     }}>
       {children}
     </AuthContext.Provider>

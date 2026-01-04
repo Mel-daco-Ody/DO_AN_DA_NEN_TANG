@@ -10,7 +10,9 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useLanguage } from '../../../contexts/LanguageContext';
 import { useSavedMoviesContext } from '../../../contexts/SavedMoviesContext';
 import { useToast } from '../../../contexts/ToastContext';
+import { usePermissionGuard } from '../../../hooks/usePermissionGuard';
 import { AnimatedButton, AnimatedCard } from '../../../components/AnimatedPressable';
+import { MOVIE_WATCH_STREAM, SAVED_MOVIE_MANAGE, SAVED_MOVIE_READ, COMMENT_CREATE, RATING_CREATE, RATING_UPDATE, COMMENT_UPDATE, COMMENT_DELETE } from '../../../utils/permissionUi';
 import { CommentSkeleton } from '../../../components/SkeletonPlaceholder';
 import { CommentsEmptyState } from '../../../components/EmptyState';
 import filmzoneApi from '../../../services/filmzone-api';
@@ -27,6 +29,7 @@ export default function MovieDetailsScreen() {
   const { t } = useLanguage();
   const { refreshSavedMovies, isMovieSaved, addSavedMovie, removeSavedMovie } = useSavedMoviesContext();
   const { showSuccess, showError, showWarning } = useToast();
+  const { guardAction } = usePermissionGuard();
   const movieId = parseInt(id as string);
   const [actors, setActors] = useState<any[]>([]);
 
@@ -56,6 +59,8 @@ export default function MovieDetailsScreen() {
   const [isPlayPressed, setIsPlayPressed] = React.useState(false);
   const [replyingToCommentID, setReplyingToCommentID] = React.useState<number | null>(null);
   const [replyText, setReplyText] = React.useState('');
+  const [editingCommentID, setEditingCommentID] = React.useState<number | null>(null);
+  const [editCommentText, setEditCommentText] = React.useState('');
   
   // Backend data
   const [movieData, setMovieData] = React.useState<any>(null);
@@ -246,26 +251,34 @@ export default function MovieDetailsScreen() {
       return;
     }
     
-    try {
-      const movieId = parseInt(id as string);
-      const userId = authState.user.userID;
-      // First time: CreateUserRating. Next time: UpdateUserRating.
-      const response = userRating?.userRatingID
-        ? await filmzoneApi.updateUserRating({
-            userRatingID: userRating.userRatingID,
-            userID: userId,
-            movieID: movieId,
-            rating: stars,
-          })
-        : await filmzoneApi.createUserRating({ userID: userId, movieID: movieId, rating: stars });
+    const movieId = parseInt(id as string);
+    const userId = authState.user.userID;
+    
+    // Determine which permission is needed (create or update)
+    const requiredPermission = userRating?.userRatingID ? RATING_UPDATE : RATING_CREATE;
+    
+    guardAction(requiredPermission, async () => {
+      try {
+        // First time: CreateUserRating. Next time: UpdateUserRating.
+        const response = userRating?.userRatingID
+          ? await filmzoneApi.updateUserRating({
+              userRatingID: userRating.userRatingID,
+              userID: userId,
+              movieID: movieId,
+              rating: stars,
+            })
+          : await filmzoneApi.createUserRating({ userID: userId, movieID: movieId, rating: stars });
 
-      const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-      if (ok && response.data) {
-        setUserRating({ ...response.data, stars: (response.data as any).stars ?? (response.data as any).rating ?? stars });
+        const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (ok && response.data) {
+          setUserRating({ ...response.data, stars: (response.data as any).stars ?? (response.data as any).rating ?? stars });
+          showSuccess('Rating saved successfully!');
+        }
+      } catch (error) {
+        console.error('Error adding rating:', error);
+        showError('Failed to save rating. Please try again.');
       }
-    } catch (error) {
-      console.error('Error adding rating:', error);
-    }
+    });
   };
 
   const handleAddReview = async (reviewData: any) => {
@@ -325,6 +338,85 @@ export default function MovieDetailsScreen() {
     return { sortedParents, repliesByParent };
   };
 
+  const handleEditComment = async (commentID: number) => {
+    const comment = comments.find((c: any) => c.commentID === commentID);
+    if (!comment) return;
+    
+    const text = editCommentText.trim();
+    if (!text) return;
+    
+    if (!authState.user || !authState.user.userID) {
+      showWarning('Please login to edit comments');
+      return;
+    }
+    
+    const userID = authState.user.userID;
+    guardAction(COMMENT_UPDATE, async () => {
+      try {
+        const response = await filmzoneApi.updateComment(commentID, {
+          userID: userID,
+          content: text,
+          parentID: comment.parentID || null,
+          likeCount: comment.likeCount || 0,
+        } as any);
+        
+        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (responseOk) {
+          showSuccess('Comment updated successfully!');
+          // Reload comments
+          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+          if (commentsOk && commentsResponse.data) {
+            const commentsData = commentsResponse.data || [];
+            const sortedComments = [...commentsData].sort((a: any, b: any) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateB - dateA;
+            });
+            setComments(sortedComments);
+          }
+          setEditingCommentID(null);
+          setEditCommentText('');
+        }
+      } catch (error) {
+        console.error('Error updating comment:', error);
+        showError('Failed to update comment. Please try again.');
+      }
+    });
+  };
+
+  const handleDeleteComment = async (commentID: number) => {
+    if (!authState.user || !authState.user.userID) {
+      showWarning('Please login to delete comments');
+      return;
+    }
+    
+    guardAction(COMMENT_DELETE, async () => {
+      try {
+        const response = await filmzoneApi.deleteComment(commentID);
+        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+        if (responseOk) {
+          showSuccess('Comment deleted successfully!');
+          // Reload comments
+          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+          if (commentsOk && commentsResponse.data) {
+            const commentsData = commentsResponse.data || [];
+            const sortedComments = [...commentsData].sort((a: any, b: any) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateB - dateA;
+            });
+            setComments(sortedComments);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting comment:', error);
+        showError('Failed to delete comment. Please try again.');
+      }
+    });
+  };
+
   const handleReplyComment = async (parentCommentID: number) => {
     const text = replyText.trim();
     if (!text) return;
@@ -334,14 +426,16 @@ export default function MovieDetailsScreen() {
       return;
     }
     
-    try {
-      const response = await filmzoneApi.createComment({
-        movieID: parseInt(id as string),
-        userID: authState.user.userID,
-        content: text,
-        parentID: parentCommentID,
-        likeCount: 0,
-      });
+    const userID = authState.user.userID; // Store userID to avoid null check issues in callback
+    guardAction(COMMENT_CREATE, async () => {
+      try {
+        const response = await filmzoneApi.createComment({
+          movieID: parseInt(id as string),
+          userID: userID,
+          content: text,
+          parentID: parentCommentID,
+          likeCount: 0,
+        });
       
       const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
       if (responseOk) {
@@ -394,6 +488,7 @@ export default function MovieDetailsScreen() {
       console.error('Error replying to comment:', error);
       showError('Failed to post reply');
     }
+    });
   };
 
   return (
@@ -448,12 +543,14 @@ export default function MovieDetailsScreen() {
                 onPressIn={() => setIsPlayPressed(true)}
                 onPressOut={() => setIsPlayPressed(false)}
                 onPress={() => {
-                  const movieId = id as string;
-                  if (!movieId || isNaN(parseInt(movieId))) {
-                    showError('Invalid movie ID');
-                    return;
-                  }
-                  router.push({ pathname: '/player/[id]', params: { id: movieId, title: safe(title), type: 'movie' } });
+                  guardAction(MOVIE_WATCH_STREAM, () => {
+                    const movieId = id as string;
+                    if (!movieId || isNaN(parseInt(movieId))) {
+                      showError('Invalid movie ID');
+                      return;
+                    }
+                    router.push({ pathname: '/player/[id]', params: { id: movieId, title: safe(title), type: 'movie' } });
+                  });
                 }}
               >
                 <Ionicons name="play" size={24} color="#fff" />
@@ -613,18 +710,22 @@ export default function MovieDetailsScreen() {
               onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-                
+
                 if (!authState.user || !authState.user.userID) {
+                  showWarning('Please login to comment');
                   return;
                 }
-                
-                try {
-                  const response = await filmzoneApi.createComment({
-                    movieID: parseInt(id as string),
-                    userID: authState.user.userID,
-                    content: text,
-                    likeCount: 0,
-                  });
+
+                const userID = authState.user.userID; // Store userID to avoid null check issues in callback
+                // Keep UI visible; only gate when user clicks "Post"
+                guardAction(COMMENT_CREATE, async () => {
+                  try {
+                    const response = await filmzoneApi.createComment({
+                      movieID: parseInt(id as string),
+                      userID: userID,
+                      content: text,
+                      likeCount: 0,
+                    });
                   
                   const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
                   if (responseOk) {
@@ -674,6 +775,7 @@ export default function MovieDetailsScreen() {
                 } catch (error) {
                   console.error('Error creating comment:', error);
                 }
+              });
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
             >
@@ -713,7 +815,40 @@ export default function MovieDetailsScreen() {
                       {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Recently'}
                     </Text>
                   </View>
-                  <Text style={styles.commentText}>{c.content}</Text>
+                  {editingCommentID === c.commentID ? (
+                    <View style={styles.editCommentContainer}>
+                      <TextInput
+                        placeholder="Edit your comment..."
+                        placeholderTextColor="#8e8e93"
+                        value={editCommentText}
+                        onChangeText={setEditCommentText}
+                        multiline
+                        style={styles.editCommentInput}
+                      />
+                      <View style={styles.editCommentActions}>
+                        <Pressable
+                          onPress={() => {
+                            setEditingCommentID(null);
+                            setEditCommentText('');
+                          }}
+                          style={({ pressed }) => [styles.editCommentCancelBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <Text style={styles.editCommentCancelText}>Cancel</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleEditComment(c.commentID)}
+                          style={({ pressed }) => [styles.editCommentSaveBtn, pressed && { opacity: 0.9 }]}
+                          disabled={!editCommentText.trim()}
+                        >
+                          <Text style={[styles.editCommentSaveText, !editCommentText.trim() && { opacity: 0.5 }]}>
+                            Save
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.commentText}>{c.content}</Text>
+                  )}
                   {!isReply && (
                     <View style={styles.commentActions}>
                       <Pressable style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}>
@@ -735,6 +870,39 @@ export default function MovieDetailsScreen() {
                           {replyingToCommentID === c.commentID ? 'Hủy' : 'Trả lời'}
                         </Text>
                       </Pressable>
+                      {/* Edit/Delete buttons - only show if user is the owner */}
+                      {authState.user?.userID && Number(c.userID) === authState.user.userID && (
+                        <>
+                          <Pressable 
+                            style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}
+                            onPress={() => {
+                              setEditingCommentID(c.commentID);
+                              setEditCommentText(c.content);
+                            }}
+                          >
+                            <Ionicons name="create-outline" size={16} color="#8e8e93" />
+                          </Pressable>
+                          <Pressable 
+                            style={({ pressed }) => [styles.commentActionBtn, pressed && { opacity: 0.7 }]}
+                            onPress={() => {
+                              Alert.alert(
+                                'Delete Comment',
+                                'Are you sure you want to delete this comment?',
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  { 
+                                    text: 'Delete', 
+                                    style: 'destructive',
+                                    onPress: () => handleDeleteComment(c.commentID)
+                                  }
+                                ]
+                              );
+                            }}
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#e50914" />
+                          </Pressable>
+                        </>
+                      )}
                     </View>
                   )}
                   {!isReply && replyingToCommentID === c.commentID && (
@@ -1187,6 +1355,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center', 
     marginTop: 8 
+  },
+  editCommentContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  editCommentInput: {
+    backgroundColor: '#2b2b31',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  editCommentActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    gap: 8,
+  },
+  editCommentCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  editCommentCancelText: {
+    color: '#8e8e93',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editCommentSaveBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#e50914',
+  },
+  editCommentSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   ratingSubtext: { 
     color: '#8e8e93', 

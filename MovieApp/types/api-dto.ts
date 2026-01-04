@@ -35,6 +35,8 @@ export interface LoginResponse {
   deviceId: string;
   tokenExpiration: string;
   refreshTokenExpiration: string;
+  /** Permission codes returned by backend for client-side gating */
+  permissions?: string[];
   user: UserDTO;
 }
 
