@@ -30,7 +30,7 @@ export function usePermissionGuard() {
         // User lacks permission, show upgrade modal.
         showUpgradeModal({
           requiredPermission,
-          message: `Tính năng này yêu cầu quyền '${requiredPermission}'. Vui lòng nâng cấp tài khoản của bạn.`,
+          message: 'Tính năng này đang yêu cầu quý khách nâng cấp tài khoản để trải nghiệm.',
         });
         // Return a rejected promise to indicate the action was blocked
         return Promise.reject(new Error(`Permission denied: ${requiredPermission}`));

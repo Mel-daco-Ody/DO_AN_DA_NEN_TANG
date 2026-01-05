@@ -160,21 +160,44 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return null;
     }
     
+    // Avatar có thể nằm ở nhiều vị trí: userDTO.avatar, userDTO.profilePicture, hoặc userDTO.profile.avatar
+    const profile = userDTO.profile || {};
+    // Lấy avatar và bỏ qua chuỗi rỗng
+    const avatarValue = (userDTO.avatar && userDTO.avatar.trim()) || 
+                       (userDTO.profilePicture && userDTO.profilePicture.trim()) || 
+                       (profile.avatar && profile.avatar.trim()) || 
+                       undefined;
+    
+    // Debug log để kiểm tra avatar
+    if (!avatarValue) {
+      console.warn('mapUserDTOToAuthUser: No avatar found', {
+        hasAvatar: !!userDTO.avatar,
+        avatarValue: userDTO.avatar,
+        hasProfilePicture: !!userDTO.profilePicture,
+        profilePictureValue: userDTO.profilePicture,
+        hasProfile: !!userDTO.profile,
+        profileAvatar: profile.avatar,
+        userDTOKeys: Object.keys(userDTO),
+      });
+    } else {
+      console.log('mapUserDTOToAuthUser: Avatar found:', avatarValue);
+    }
+    
     return {
       userID: userId,
       userName: userDTO.userName || '',
-      firstName: userDTO.firstName,
-      lastName: userDTO.lastName,
+      firstName: userDTO.firstName || profile.firstName,
+      lastName: userDTO.lastName || profile.lastName,
       name: userDTO.name || userDTO.userName || '',
       email: userDTO.email || '',
       role: (userDTO.role as any) || 'User',
       status: (userDTO.status as any) || 'Active',
-      avatar: userDTO.avatar || userDTO.profilePicture,
-      profilePicture: userDTO.profilePicture || userDTO.avatar,
+      avatar: avatarValue,
+      profilePicture: avatarValue,
       phone: userDTO.phoneNumber,
       phoneNumber: userDTO.phoneNumber,
-      dateOfBirth: userDTO.dateOfBirth,
-      gender: userDTO.gender,
+      dateOfBirth: userDTO.dateOfBirth || profile.dateOfBirth,
+      gender: userDTO.gender || profile.gender,
       address: userDTO.address,
       city: userDTO.city,
       country: userDTO.country,
@@ -297,8 +320,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('AuthContext: getCurrentUser response:', JSON.stringify(userResponse, null, 2));
           
           if (userResponse.errorCode === 200 && userResponse.data) {
+            const rawData = userResponse.data;
+            console.log('AuthContext: Raw user data from API:', {
+              hasAvatar: !!rawData.avatar,
+              hasProfilePicture: !!rawData.profilePicture,
+              hasProfile: !!rawData.profile,
+              profileAvatar: rawData.profile?.avatar,
+              avatar: rawData.avatar,
+              profilePicture: rawData.profilePicture,
+              allKeys: Object.keys(rawData || {}),
+            });
+            
             userData = mapUserDTOToAuthUser(userResponse.data);
-            console.log('AuthContext: Mapped user from getCurrentUser:', userData);
+            console.log('AuthContext: Mapped user from getCurrentUser:', {
+              userID: userData?.userID,
+              userName: userData?.userName,
+              avatar: userData?.avatar,
+              profilePicture: userData?.profilePicture,
+            });
           } else {
             console.warn('AuthContext: getCurrentUser returned error:', userResponse.errorMessage);
           }
@@ -310,7 +349,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!userData && userFromResponse) {
           console.log('AuthContext: Falling back to user from login response');
           userData = mapUserDTOToAuthUser(userFromResponse);
-          console.log('AuthContext: Mapped user from login response:', userData);
+          console.log('AuthContext: Mapped user from login response:', {
+            userID: userData?.userID,
+            userName: userData?.userName,
+            avatar: userData?.avatar,
+            profilePicture: userData?.profilePicture,
+          });
         }
 
         if (!userData) {

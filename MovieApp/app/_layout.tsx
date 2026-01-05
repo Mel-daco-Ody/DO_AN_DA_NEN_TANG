@@ -58,7 +58,7 @@ export default function RootLayout() {
                 <Stack.Screen name="+not-found" />
                     </Stack>
 
-                      <UpgradeRequiredModal onUpgrade={() => router.push('/moviebox')} />
+                      <UpgradeRequiredModal onUpgrade={() => router.push('/profile?tab=subscription')} />
                     <StatusBar style="auto" />
                   </ToastProvider>
                 </ApiProvider>

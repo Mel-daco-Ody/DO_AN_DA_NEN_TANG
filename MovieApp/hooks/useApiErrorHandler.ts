@@ -17,7 +17,7 @@ export function useApiErrorHandler() {
       if (error instanceof PermissionDeniedError) {
         showUpgradeModal({
           requiredPermission: error.requiredPermission,
-          message: error.message,
+          message: 'Tính năng này đang yêu cầu quý khách nâng cấp tài khoản để trải nghiệm.',
         });
         return true;
       }

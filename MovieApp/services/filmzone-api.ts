@@ -125,7 +125,7 @@ class FilmZoneApi {
             requiredPermission: entry.permission,
             method,
             path,
-            message: 'Nội dung dành cho tài khoản cấp cao hơn. Vui lòng nâng cấp để sử dụng.',
+            message: 'Tính năng này đang yêu cầu quý khách nâng cấp tài khoản để trải nghiệm.',
           });
         }
       }
@@ -413,6 +413,24 @@ class FilmZoneApi {
 
     // Use query parameter as per API documentation
     return this.request<UserDTO & { profile?: any }>(`/user/getUserById?userId=${userID}`);
+  }
+
+  /**
+   * GET /user/GetUserSlimById{userID}
+   * Path parameter endpoint for getting slim user data
+   */
+  async getUserSlimById(userID: number): Promise<FilmZoneResponse<UserDTO & { profile?: any }>> {
+    // Filter out invalid userIDs
+    if (!userID || userID <= 0 || isNaN(userID)) {
+      return {
+        errorCode: 400,
+        errorMessage: 'Invalid userID',
+        success: false,
+      };
+    }
+
+    // Use path parameter as per API documentation
+    return this.request<UserDTO & { profile?: any }>(`/user/GetUserSlimById${userID}`);
   }
 
   /**

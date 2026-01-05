@@ -162,11 +162,24 @@ export default function SeriesDetailsScreen() {
           
           const userDataMap = new Map<number, any>();
           
-          // Fetch user data for all unique userIDs
+          // Fetch user data for all unique userIDs using GetUserSlimById
           await Promise.all(
             uniqueUserIDs.map(async (userID: number) => {
               try {
-                const userResponse = await filmzoneApi.getUserById(userID);
+                // Check if method exists
+                if (typeof filmzoneApi.getUserSlimById !== 'function') {
+                  console.error(`getUserSlimById is not a function. Available methods:`, Object.keys(filmzoneApi));
+                  // Fallback to getUserById
+                  const userResponse = await filmzoneApi.getUserById(userID);
+                  const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                  if (userOk && userResponse.data) {
+                    userDataMap.set(userID, userResponse.data);
+                    console.log(`User data loaded for userID ${userID} (fallback):`, userResponse.data.userName || userResponse.data.name);
+                  }
+                  return;
+                }
+                
+                const userResponse = await filmzoneApi.getUserSlimById(userID);
                 const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
                 if (userOk && userResponse.data) {
                   userDataMap.set(userID, userResponse.data);
@@ -389,7 +402,10 @@ export default function SeriesDetailsScreen() {
           await Promise.all(
             uniqueUserIDs.map(async (userID: number) => {
               try {
-                const userResponse = await filmzoneApi.getUserById(userID);
+                // Check if method exists, fallback to getUserById if not
+                const userResponse = typeof filmzoneApi.getUserSlimById === 'function' 
+                  ? await filmzoneApi.getUserSlimById(userID)
+                  : await filmzoneApi.getUserById(userID);
                 const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
                 if (userOk && userResponse.data) {
                   userDataMap.set(userID, userResponse.data);
@@ -947,7 +963,12 @@ export default function SeriesDetailsScreen() {
           <View style={styles.commentAvatar}>
             {(() => {
               const user = currentUser || authState.user;
-              const avatar = user?.avatar || user?.profilePicture;
+              // Lấy avatar từ nhiều vị trí có thể (bỏ qua chuỗi rỗng)
+              const profile = user?.profile || {};
+              const avatar = (user?.avatar && user.avatar.trim()) || 
+                           (user?.profilePicture && user.profilePicture.trim()) || 
+                           (profile?.avatar && profile.avatar.trim()) || 
+                           null;
               const userName = user?.name || user?.userName || 'U';
               
               return avatar ? (
@@ -1022,7 +1043,10 @@ export default function SeriesDetailsScreen() {
                       await Promise.all(
                         uniqueUserIDs.map(async (userID: number) => {
                           try {
-                            const userResponse = await filmzoneApi.getUserById(userID);
+                            // Check if method exists, fallback to getUserById if not
+                            const userResponse = typeof filmzoneApi.getUserSlimById === 'function' 
+                              ? await filmzoneApi.getUserSlimById(userID)
+                              : await filmzoneApi.getUserById(userID);
                             const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
                             if (userOk && userResponse.data) {
                               userDataMap.set(userID, userResponse.data);
@@ -1060,7 +1084,12 @@ export default function SeriesDetailsScreen() {
             const userID = c.userID ? Number(c.userID) : null;
             const user = userID ? commentUsers.get(userID) : null;
             const userName = user?.name || user?.userName || c.userName || 'User';
-            const userAvatar = user?.avatar || user?.profilePicture || null;
+            // Lấy avatar từ nhiều vị trí có thể (bỏ qua chuỗi rỗng)
+            const profile = user?.profile || {};
+            const userAvatar = (user?.avatar && user.avatar.trim()) || 
+                             (user?.profilePicture && user.profilePicture.trim()) || 
+                             (profile?.avatar && profile.avatar.trim()) || 
+                             null;
             const avatarInitial = userName.charAt(0).toUpperCase();
             
             return (

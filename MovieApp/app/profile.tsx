@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ImageBackground, ScrollView, Pressable, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Image } from 'expo-image';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import ImageWithPlaceholder from '../components/ImageWithPlaceholder';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ export default function ProfileScreen() {
   const { t } = useLanguage();
   const { theme, toggleTheme, isDarkMode } = useTheme();
   const { guardAction } = usePermissionGuard();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const { 
     notificationsEnabled, 
     notificationSettings,
@@ -88,9 +89,103 @@ export default function ProfileScreen() {
       setName(currentName);
       setNewUserName(currentName);
       setEmail(authState.user.email || '');
-      setAvatar(authState.user.avatar || '');
+      
+      // Lấy avatar từ nhiều nguồn có thể (bỏ qua chuỗi rỗng)
+      const avatarUrl = (authState.user.avatar && authState.user.avatar.trim()) || 
+                       (authState.user.profilePicture && authState.user.profilePicture.trim()) || 
+                       '';
+      setAvatar(avatarUrl);
+      
+      // Debug log
+      if (avatarUrl) {
+        console.log('Profile: Avatar loaded from authState:', avatarUrl);
+      } else {
+        console.warn('Profile: No avatar found in authState.user:', {
+          hasAvatar: !!authState.user.avatar,
+          avatarValue: authState.user.avatar,
+          hasProfilePicture: !!authState.user.profilePicture,
+          profilePictureValue: authState.user.profilePicture,
+          user: authState.user,
+        });
+      }
     }
   }, [authState.user]);
+
+  // Refresh avatar từ API khi vào profile screen
+  useFocusEffect(
+    useCallback(() => {
+      const refreshAvatar = async () => {
+        if (!authState.isAuthenticated || !authState.user?.userID) {
+          return;
+        }
+
+        try {
+          console.log('Profile: Refreshing avatar from API on focus...');
+          const userRes = await filmzoneApi.getCurrentUser();
+          console.log('Profile: getCurrentUser response:', {
+            errorCode: userRes.errorCode,
+            success: userRes.success,
+            hasData: !!userRes.data,
+            errorMessage: userRes.errorMessage,
+          });
+          
+          // Nếu 401, có thể token đã hết hạn - không cần refresh avatar
+          if (userRes.errorCode === 401) {
+            console.warn('Profile: getCurrentUser returned 401 - authentication issue, skipping avatar refresh');
+            return;
+          }
+          
+          if (userRes.errorCode === 200 && userRes.data) {
+            const userData = userRes.data as any;
+            const profile = userData?.profile || {};
+            
+            console.log('Profile: User data structure:', {
+              hasAvatar: !!userData?.avatar,
+              hasProfilePicture: !!userData?.profilePicture,
+              hasProfile: !!userData?.profile,
+              profileAvatar: profile?.avatar,
+              avatar: userData?.avatar,
+              profilePicture: userData?.profilePicture,
+              allKeys: Object.keys(userData || {}),
+            });
+            
+            // Lấy avatar từ nhiều vị trí có thể (bỏ qua chuỗi rỗng)
+            const avatarUrl = (userData?.avatar && userData.avatar.trim()) || 
+                             (userData?.profilePicture && userData.profilePicture.trim()) || 
+                             (profile?.avatar && profile.avatar.trim()) || 
+                             undefined;
+            
+            console.log('Profile: Extracted avatar URL:', avatarUrl);
+            
+            if (avatarUrl) {
+              setAvatar(avatarUrl);
+              updateUser({
+                avatar: avatarUrl,
+                profilePicture: avatarUrl,
+              });
+              console.log('Profile: ✅ Avatar refreshed from API on focus:', avatarUrl);
+            } else {
+              console.warn('Profile: ⚠️ No avatar URL found in API response');
+            }
+          } else {
+            console.warn('Profile: getCurrentUser failed:', userRes.errorMessage);
+          }
+        } catch (error) {
+          // Silent fail - không block UI
+          console.error('Profile: ❌ Failed to refresh avatar on focus:', error);
+        }
+      };
+
+      refreshAvatar();
+    }, [authState.isAuthenticated, authState.user?.userID, avatar, updateUser])
+  );
+
+  // Handle tab navigation from query params
+  useEffect(() => {
+    if (params.tab && ['overview', 'settings', 'subscription'].includes(params.tab)) {
+      setActiveTab(params.tab);
+    }
+  }, [params.tab]);
 
   // Load plans/prices when subscription tab active or user changes
   useEffect(() => {
@@ -917,54 +1012,10 @@ export default function ProfileScreen() {
     try {
       await Haptics.selectionAsync();
 
+      // Lấy userId từ auth và newUserName từ input container
       const userId = authState.user.userID;
 
-      // 1) Lấy full profile mới nhất từ backend (để có firstName/lastName/avatar/gender/dateOfBirth)
-      logger.info('EditName: fetching user profile', { userId });
-      const userRes = await filmzoneApi.getUserById(userId);
-      const userOk = (userRes as any).success === true || (userRes.errorCode >= 200 && userRes.errorCode < 300);
-      if (!userOk || !userRes.data) {
-        logger.error('EditName: getUserById failed', {
-          userId,
-          errorCode: (userRes as any).errorCode,
-          errorMessage: (userRes as any).errorMessage,
-          success: (userRes as any).success,
-        });
-        Alert.alert('Error', userRes.errorMessage || 'Failed to load user profile');
-        return;
-      }
-
-            const u: any = userRes.data;
-      const profile: any = u?.profile || {};
-
-      const firstName = u?.firstName ?? profile?.firstName ?? '';
-      const lastName = u?.lastName ?? profile?.lastName ?? '';
-      const avatarFromApi = u?.avatar ?? profile?.avatar ?? '';
-      const gender = u?.gender ?? profile?.gender ?? '';
-      const dateOfBirth = u?.dateOfBirth ?? profile?.dateOfBirth ?? '';
-
-      logger.info('EditName: extracted profile fields', {
-        userId,
-        firstNameLen: String(firstName || '').length,
-        lastNameLen: String(lastName || '').length,
-        hasAvatar: !!avatarFromApi,
-        gender,
-        dateOfBirth,
-      });
-
-      // 2) Update profile name
-      logger.info('EditName: updating profile', {
-        userId,
-        newUserName: trimmed,
-        hasFirstName: !!firstName,
-        hasLastName: !!lastName,
-        hasAvatar: !!avatarFromApi,
-        gender,
-        dateOfBirth,
-        userKeys: u && typeof u === 'object' ? Object.keys(u) : [],
-      });
-
-      // 2) Update username bằng API mới: /user/update/username (query params)
+      // Gọi API /user/update/username
       logger.info('EditName: updating username via /user/update/username', {
         userId,
         newUsername: trimmed,
@@ -979,30 +1030,19 @@ export default function ProfileScreen() {
         (updateProfileRes as any).success === true ||
         (updateProfileRes.errorCode >= 200 && updateProfileRes.errorCode < 300);
 
-
       if (!updateOk) {
-        logger.error('EditName: update profile failed', {
+        logger.error('EditName: update username failed', {
           userId,
           newUserName: trimmed,
           errorCode: (updateProfileRes as any).errorCode,
           errorMessage: (updateProfileRes as any).errorMessage,
           success: (updateProfileRes as any).success,
-          dataPreview: (() => {
-            try {
-              const d: any = (updateProfileRes as any).data;
-              if (d === undefined || d === null) return 'No data';
-              const s = JSON.stringify(d);
-              return s ? s.substring(0, 500) : 'Empty';
-            } catch (e: any) {
-              return `Failed to stringify data: ${e?.message || String(e)}`;
-            }
-          })(),
         });
         Alert.alert('Error', updateProfileRes.errorMessage || 'Failed to update name');
         return;
       }
 
-      logger.info('EditName: update profile success', {
+      logger.info('EditName: update username success', {
         userId,
         newUserName: trimmed,
         errorCode: (updateProfileRes as any).errorCode,
@@ -1051,27 +1091,67 @@ export default function ProfileScreen() {
         const user = authState.user;
         if (!user || !user.userID) {
           Alert.alert('Error', 'Missing user info. Please sign in again.');
-        } else {
-          await Haptics.selectionAsync();
-
-          await filmzoneApi.updateUserProfileAvatar({
-            userID: user.userID,
-            avatarUri: newAvatarUri,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            gender: user.gender,
-            dateOfBirth: user.dateOfBirth,
-          } as any);
+          return;
         }
-      } catch (error) {
-        console.warn('Failed to upload avatar to backend', error);
-      }
 
-      // Cập nhật avatar trong authState để sync toàn app
-      updateUser({
-        avatar: newAvatarUri,
-        profilePicture: newAvatarUri,
-      });
+        await Haptics.selectionAsync();
+
+        const uploadRes = await filmzoneApi.updateUserProfileAvatar({
+          userID: user.userID,
+          avatarUri: newAvatarUri,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          gender: user.gender,
+          dateOfBirth: user.dateOfBirth,
+        } as any);
+
+        const uploadOk = uploadRes.success === true || 
+          (uploadRes.errorCode >= 200 && uploadRes.errorCode < 300);
+
+        if (!uploadOk) {
+          Alert.alert('Error', uploadRes.errorMessage || 'Failed to upload avatar');
+          return;
+        }
+
+        // Sau khi upload thành công, refresh lại từ API để lấy Cloudinary URL
+        try {
+          const userRes = await filmzoneApi.getCurrentUser();
+          if (userRes.errorCode === 200 && userRes.data) {
+            const userData = userRes.data as any;
+            const profile = userData?.profile || {};
+            // Lấy avatar từ nhiều vị trí có thể
+            const cloudinaryAvatarUrl = userData?.avatar || userData?.profilePicture || profile?.avatar;
+            
+            if (cloudinaryAvatarUrl) {
+              // Update local state với Cloudinary URL từ backend
+              setAvatar(cloudinaryAvatarUrl);
+              
+              // Sync với AuthContext
+              updateUser({
+                avatar: cloudinaryAvatarUrl,
+                profilePicture: cloudinaryAvatarUrl,
+              });
+
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              logger.info('Avatar uploaded and refreshed from API', {
+                userId: user.userID,
+                avatarUrl: cloudinaryAvatarUrl,
+              });
+            } else {
+              // Fallback: dùng local URI nếu không lấy được từ API
+              logger.warn('Avatar uploaded but no URL in API response, using local URI');
+            }
+          } else {
+            logger.warn('Failed to refresh avatar from API after upload');
+          }
+        } catch (refreshError) {
+          // Fallback: dùng local URI nếu refresh thất bại
+          console.warn('Failed to refresh avatar from API:', refreshError);
+        }
+      } catch (error: any) {
+        console.error('Failed to upload avatar to backend', error);
+        Alert.alert('Error', error?.message || 'Failed to upload avatar');
+      }
     }
   };
 

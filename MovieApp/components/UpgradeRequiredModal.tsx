@@ -19,7 +19,9 @@ export const UpgradeRequiredModal: React.FC<Props> = ({ onUpgrade }) => {
       <View style={styles.backdrop}>
         <View style={styles.container}>
           <Text style={styles.title}>Nâng cấp để sử dụng</Text>
-          <Text style={styles.message}>{modalState.message}</Text>
+          <Text style={styles.message}>
+            Tính năng này đang yêu cầu quý khách nâng cấp tài khoản để trải nghiệm.
+          </Text>
 
           <View style={styles.actions}>
             <TouchableOpacity style={[styles.button, styles.secondary]} onPress={hideUpgradeModal}>
