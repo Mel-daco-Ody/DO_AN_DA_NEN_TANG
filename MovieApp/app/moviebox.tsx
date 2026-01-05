@@ -119,7 +119,7 @@ export default function MovieBoxScreen() {
   const retryLoadMovies = async () => {
     setIsLoading(true);
     setError(null);
-
+    
     if (!authState.user || !authState.user.userID) {
       setIsLoading(false);
       return;
@@ -133,15 +133,15 @@ export default function MovieBoxScreen() {
       });
       return;
     }
-
+    
     try {
       const { filmzoneApi } = await import('../services/filmzone-api');
       console.log('MovieBox: Retrying load saved movies for user:', authState.user.userID);
-
+      
       const response = await filmzoneApi.getSavedMoviesByUserID(authState.user.userID);
-
+      
       console.log('MovieBox: Retry response:', JSON.stringify(response, null, 2));
-
+      
       if (response.errorCode === 200) {
         setSavedMovies(response.data || []);
       } else {

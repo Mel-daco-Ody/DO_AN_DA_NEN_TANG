@@ -65,8 +65,8 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
     return savedMovieIds.has(movieId);
   }, [savedMovieIds]);
 
-    const removeSavedMovie = useCallback((movieId: number) => {
-    guardAction(SAVED_MOVIE_MANAGE, async () => {
+  const removeSavedMovie = useCallback(async (movieId: number) => {
+    return guardAction(SAVED_MOVIE_MANAGE, async () => {
 
     try {
       // Get savedMovieID from map
@@ -161,8 +161,8 @@ export const SavedMoviesProvider: React.FC<SavedMoviesProviderProps> = ({ childr
     });
   }, [authState.user?.userID, savedMovieIdMap, refreshSavedMovies, guardAction]);
 
-  const addSavedMovie = useCallback((movieId: number) => {
-    guardAction(SAVED_MOVIE_MANAGE, async () => {
+  const addSavedMovie = useCallback(async (movieId: number) => {
+    return guardAction(SAVED_MOVIE_MANAGE, async () => {
 
     try {
       if (!authState.user?.userID) {

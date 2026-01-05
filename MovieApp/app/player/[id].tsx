@@ -686,10 +686,13 @@ export default function VideoPlayerScreen() {
               setVideoError(false);
               bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
               // Load subtitles for this episode source (don't await - load in background)
-              if (episodeSourceId) {
+              if (episodeSourceId !== undefined && episodeSourceId !== null && episodeSourceId > 0) {
+                console.log('VideoPlayerScreen: Calling loadSubtitles for episode with episodeSourceId:', episodeSourceId);
                 loadSubtitles(episodeSourceId, true).catch(err => {
                   console.error('VideoPlayerScreen: Error loading episode subtitles (non-blocking):', err);
                 });
+              } else {
+                console.warn('VideoPlayerScreen: Cannot load subtitles - episodeSourceId is invalid:', episodeSourceId);
               }
               // Video will start loading in chunks automatically via HTTP Range requests
               // expo-av handles progressive loading natively
@@ -783,10 +786,13 @@ export default function VideoPlayerScreen() {
                 bufferReadyLoggedRef.current = false; // Reset buffer log flag for new video
                 // Load subtitles for this movie source (don't await - load in background)
                 // Subtitles are optional - video will play even if subtitle loading fails
-                if (sourceIdRaw) {
+                if (sourceIdRaw !== undefined && sourceIdRaw !== null && sourceIdRaw > 0) {
+                  console.log('VideoPlayerScreen: Calling loadSubtitles for movie with sourceIdRaw:', sourceIdRaw);
                   loadSubtitles(sourceIdRaw, false).catch(err => {
                     console.error('VideoPlayerScreen: Error loading movie subtitles (non-blocking, video will still play):', err);
                   });
+                } else {
+                  console.warn('VideoPlayerScreen: Cannot load subtitles - sourceIdRaw is invalid:', sourceIdRaw);
                 }
                 // Video will start loading in chunks automatically via HTTP Range requests
                 // expo-av handles progressive loading natively
@@ -1594,6 +1600,16 @@ export default function VideoPlayerScreen() {
                     { width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }
                   ]} 
                 />
+                {/* Seek thumb for easier dragging */}
+                <View
+                  style={[
+                    styles.progressThumb,
+                    {
+                      left: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                    },
+                  ]}
+                  pointerEvents="none"
+                />
               </View>
               <Text style={styles.timeText}>{formatTime(duration)}</Text>
             </View>
@@ -1707,7 +1723,14 @@ export default function VideoPlayerScreen() {
 
       {/* Subtitles overlay */}
       {showSubtitles && selectedSubtitle !== 'off' && currentSubtitleText && (
-        <View style={styles.subtitlesContainer}>
+        <View
+          style={[
+            styles.subtitlesContainer,
+            !isLandscape && styles.subtitlesContainerPortrait,
+            !showControls && styles.subtitlesContainerNoControls, // When controls are hidden, move subtitles closer to bottom
+            !showControls && !isLandscape && styles.subtitlesContainerNoControlsPortrait,
+          ]}
+        >
           <Text style={styles.subtitlesText}>
             {currentSubtitleText}
           </Text>
@@ -1941,15 +1964,32 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     flex: 1,
-    height: 4,
+    height: 6,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 2,
+    borderRadius: 3,
     marginHorizontal: 12,
+    position: 'relative',
   },
   progressFill: {
     height: '100%',
     backgroundColor: '#e50914',
-    borderRadius: 2,
+    borderRadius: 3,
+  },
+  progressThumb: {
+    position: 'absolute',
+    top: '50%',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#e50914',
+    transform: [{ translateX: -8 }, { translateY: -8 }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   controlButtons: {
     flexDirection: 'row',
@@ -2037,12 +2077,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  subtitlesContainerNoControlsPortrait: {
+    bottom: 300,
+  },
+  // Higher in portrait mode when controls overlay is visible
+  subtitlesContainerPortrait: {
+    bottom: 280,
+  },
+  // When controls overlay is hidden, move subtitles closer to bottom edge
+  subtitlesContainerNoControls: {
+    bottom: 100,
+  },
   subtitlesText: {
-    color: '#fff',
+    color: 'rgba(255, 255, 255, 0.82)',
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.13)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,

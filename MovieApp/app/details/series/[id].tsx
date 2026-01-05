@@ -291,6 +291,11 @@ export default function SeriesDetailsScreen() {
         }
         // Context is already updated, UI will automatically reflect the change
       } catch (error) {
+        // Don't show error if it's a permission denied error (upgrade modal already shown)
+        if (error instanceof Error && error.message.includes('Permission denied')) {
+          console.log('SeriesDetail: Permission denied, upgrade modal already shown');
+          return;
+        }
         console.error('SeriesDetail: Error toggling saved status:', error);
         showError('Failed to update your series list');
       }
@@ -346,66 +351,66 @@ export default function SeriesDetailsScreen() {
     
     const userID = authState.user.userID; // Store userID to avoid null check issues in callback
     guardAction(COMMENT_CREATE, async () => {
-      try {
-        const response = await filmzoneApi.createComment({
-          movieID: parseInt(id as string),
+    try {
+      const response = await filmzoneApi.createComment({
+        movieID: parseInt(id as string),
           userID: userID,
-          content: text,
-          parentID: parentCommentID,
-          likeCount: 0,
-        });
-        
-        const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-        if (responseOk) {
-          showSuccess('Reply posted successfully!');
-          // Reload comments to get updated list
-          const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
-          const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
-          if (commentsOk && commentsResponse.data) {
-            const commentsData = commentsResponse.data || [];
-            // Sort comments by createdAt descending (newest first)
-            const sortedComments = [...commentsData].sort((a, b) => {
-              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-              return dateB - dateA; // Descending order (newest first)
-            });
-            setComments(sortedComments);
-            
-            // Fetch user data for each unique userID in comments
-            const uniqueUserIDs = [...new Set(
-              commentsData
-                .map((c: any) => c.userID)
-                .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
-                .map((id: any) => Number(id))
-            )];
-            
-            const userDataMap = new Map<number, any>();
-            
-            await Promise.all(
-              uniqueUserIDs.map(async (userID: number) => {
-                try {
-                  const userResponse = await filmzoneApi.getUserById(userID);
-                  const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
-                  if (userOk && userResponse.data) {
-                    userDataMap.set(userID, userResponse.data);
-                  }
-                } catch (err) {
-                  console.error(`Error loading user data for userID ${userID}:`, err);
+        content: text,
+        parentID: parentCommentID,
+        likeCount: 0,
+      });
+      
+      const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+      if (responseOk) {
+        showSuccess('Reply posted successfully!');
+        // Reload comments to get updated list
+        const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+        const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+        if (commentsOk && commentsResponse.data) {
+          const commentsData = commentsResponse.data || [];
+          // Sort comments by createdAt descending (newest first)
+          const sortedComments = [...commentsData].sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA; // Descending order (newest first)
+          });
+          setComments(sortedComments);
+          
+          // Fetch user data for each unique userID in comments
+          const uniqueUserIDs = [...new Set(
+            commentsData
+              .map((c: any) => c.userID)
+              .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+              .map((id: any) => Number(id))
+          )];
+          
+          const userDataMap = new Map<number, any>();
+          
+          await Promise.all(
+            uniqueUserIDs.map(async (userID: number) => {
+              try {
+                const userResponse = await filmzoneApi.getUserById(userID);
+                const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                if (userOk && userResponse.data) {
+                  userDataMap.set(userID, userResponse.data);
                 }
-              })
-            );
-            
-            setCommentUsers(userDataMap);
-          }
-          setReplyText('');
-          setReplyingToCommentID(null);
-        } else {
-          showError(response.errorMessage || 'Failed to post reply');
+              } catch (err) {
+                console.error(`Error loading user data for userID ${userID}:`, err);
+              }
+            })
+          );
+          
+          setCommentUsers(userDataMap);
         }
-      } catch (error) {
-        console.error('Error replying to comment:', error);
-        showError('Failed to post reply');
+        setReplyText('');
+        setReplyingToCommentID(null);
+      } else {
+        showError(response.errorMessage || 'Failed to post reply');
       }
+    } catch (error) {
+      console.error('Error replying to comment:', error);
+      showError('Failed to post reply');
+    }
     });
   };
 
@@ -970,72 +975,72 @@ export default function SeriesDetailsScreen() {
               onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-
+                
                 if (!authState.user || !authState.user.userID) {
                   showWarning('Please login to comment');
                   return;
                 }
-
+                
                 const userID = authState.user.userID; // Store userID to avoid null check issues in callback
                 // Keep UI visible; only gate when user clicks "Post"
                 guardAction(COMMENT_CREATE, async () => {
-                  try {
-                    const response = await filmzoneApi.createComment({
-                      movieID: parseInt(id as string),
+                try {
+                  const response = await filmzoneApi.createComment({
+                    movieID: parseInt(id as string),
                       userID: userID,
-                      content: text,
-                      likeCount: 0,
-                    });
-                    
-                    const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-                    if (responseOk) {
-                      // Reload comments to get updated list
-                      const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
-                      const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
-                      if (commentsOk && commentsResponse.data) {
-                        const commentsData = commentsResponse.data || [];
-                        // Sort comments by createdAt descending (newest first)
-                        const sortedComments = [...commentsData].sort((a, b) => {
-                          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                          return dateB - dateA; // Descending order (newest first)
-                        });
-                        setComments(sortedComments);
-                        
-                        // Fetch user data for each unique userID in comments
-                        // Filter out invalid userIDs (0, null, undefined, negative)
-                        const uniqueUserIDs = [...new Set(
-                          commentsData
-                            .map((c: any) => c.userID)
-                            .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
-                            .map((id: any) => Number(id))
-                        )];
-                        
-                        const userDataMap = new Map<number, any>();
-                        
-                        // Fetch user data for all unique userIDs
-                        await Promise.all(
-                          uniqueUserIDs.map(async (userID: number) => {
-                            try {
-                              const userResponse = await filmzoneApi.getUserById(userID);
-                              const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
-                              if (userOk && userResponse.data) {
-                                userDataMap.set(userID, userResponse.data);
-                              }
-                            } catch (err) {
-                              console.error(`Error loading user data for userID ${userID}:`, err);
+                    content: text,
+                    likeCount: 0,
+                  });
+                  
+                  const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+                  if (responseOk) {
+                    // Reload comments to get updated list
+                    const commentsResponse = await filmzoneApi.getCommentsByMovieID(parseInt(id as string));
+                    const commentsOk = (commentsResponse as any).success === true || (commentsResponse.errorCode >= 200 && commentsResponse.errorCode < 300);
+                    if (commentsOk && commentsResponse.data) {
+                      const commentsData = commentsResponse.data || [];
+                      // Sort comments by createdAt descending (newest first)
+          const sortedComments = [...commentsData].sort((a, b) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateB - dateA; // Descending order (newest first)
+          });
+          setComments(sortedComments);
+                      
+                      // Fetch user data for each unique userID in comments
+                      // Filter out invalid userIDs (0, null, undefined, negative)
+                      const uniqueUserIDs = [...new Set(
+                        commentsData
+                          .map((c: any) => c.userID)
+                          .filter((id: any) => id != null && id !== undefined && !isNaN(Number(id)) && Number(id) > 0)
+                          .map((id: any) => Number(id))
+                      )];
+                      
+                      const userDataMap = new Map<number, any>();
+                      
+                      // Fetch user data for all unique userIDs
+                      await Promise.all(
+                        uniqueUserIDs.map(async (userID: number) => {
+                          try {
+                            const userResponse = await filmzoneApi.getUserById(userID);
+                            const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
+                            if (userOk && userResponse.data) {
+                              userDataMap.set(userID, userResponse.data);
                             }
-                          })
-                        );
-                        
-                        setCommentUsers(userDataMap);
-                      }
-                      setCommentText('');
+                          } catch (err) {
+                            console.error(`Error loading user data for userID ${userID}:`, err);
+                          }
+                        })
+                      );
+                      
+                      setCommentUsers(userDataMap);
                     }
-                  } catch (error) {
-                    console.error('Error creating comment:', error);
-                    showError('Failed to create comment. Please try again.');
+                    setCommentText('');
                   }
+                } catch (error) {
+                  console.error('Error creating comment:', error);
+                    showError('Failed to create comment. Please try again.');
+                }
                 });
               }}
               style={({ pressed }) => [styles.commentBtn, pressed && { opacity: 0.9 }]}
@@ -1109,7 +1114,7 @@ export default function SeriesDetailsScreen() {
                       </View>
                     </View>
                   ) : (
-                    <Text style={styles.commentText}>{c.content}</Text>
+                  <Text style={styles.commentText}>{c.content}</Text>
                   )}
                   {!isReply && (
                     <View style={styles.commentActions}>

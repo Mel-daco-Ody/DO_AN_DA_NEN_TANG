@@ -112,10 +112,11 @@ export const API_PERMISSIONS: readonly ApiPermissionEntry[] = [
   { method: 'DELETE', pathTemplate: '/movie/MovieSource/DeleteMovieSource/{id}', permission: 'source.manage', isPublic: false },
 
   // MovieSubTitle
-  { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllSubTitlesByMovieId/movie/GetAllSubTitlesBySourceID/{sourceID}', permission: 'subtitle.read', isPublic: false },
+  { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllSubTitlesByMovieId/movie/GetAllSubTitlesBySourceID/{sourceID}', permission: null, isPublic: true },
   { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllSubTitles/movie/GetAllSubTitles', permission: 'subtitle.read', isPublic: false },
   { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetMovieSubTitleByID/movie/GetMovieSubTitleByID/{movieSubTitleID}', permission: 'subtitle.read', isPublic: false },
-  { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllSubTitlesByEpisodeId/episode/GetAllSubTitlesBySourceID/{sourceID}', permission: 'subtitle.read', isPublic: false },
+  { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllSubTitlesByEpisodeId/episode/GetAllSubTitlesBySourceID/{sourceID}', permission: null, isPublic: true },
+  { method: 'GET', pathTemplate: '/movie/EpisodeSubTitle/GetEpisodeSubTitlesBySourceID/{sourceId}', permission: null, isPublic: true },
   { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetEpisodeSubTitleByID/episode/GetEpisodeSubTitleByID/{episodeSubTitleID}', permission: 'subtitle.read', isPublic: false },
   { method: 'GET', pathTemplate: '/api/MovieSubTitle/GetAllEpisodeSubTitles/episode/GetAllSubTitles', permission: 'subtitle.read', isPublic: false },
   { method: 'POST', pathTemplate: '/api/MovieSubTitle/ReceiveTranscribeCallback/Callback/TranscribeResult', permission: null, isPublic: true },

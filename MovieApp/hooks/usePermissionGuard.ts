@@ -14,23 +14,26 @@ export function usePermissionGuard() {
   const { showUpgradeModal } = useUpgradeModal();
 
   const guardAction = useCallback(
-    (requiredPermission: string | null, action: () => void) => {
+    (requiredPermission: string | null, action: () => void | Promise<void>): Promise<void> => {
       if (!requiredPermission) {
-        action(); // No permission required, proceed.
-        return;
+        const result = action(); // No permission required, proceed.
+        return result instanceof Promise ? result : Promise.resolve();
       }
 
       const userPermissions = authState.permissions || [];
       const hasPermission = userPermissions.includes(requiredPermission);
 
       if (hasPermission) {
-        action(); // User has permission, proceed.
+        const result = action(); // User has permission, proceed.
+        return result instanceof Promise ? result : Promise.resolve();
       } else {
         // User lacks permission, show upgrade modal.
         showUpgradeModal({
           requiredPermission,
           message: `Tính năng này yêu cầu quyền '${requiredPermission}'. Vui lòng nâng cấp tài khoản của bạn.`,
         });
+        // Return a rejected promise to indicate the action was blocked
+        return Promise.reject(new Error(`Permission denied: ${requiredPermission}`));
       }
     },
     [authState.permissions, showUpgradeModal]

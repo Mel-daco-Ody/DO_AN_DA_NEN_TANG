@@ -160,8 +160,8 @@ export const useOptimizedHomeData = (userId?: number): UseOptimizedHomeDataRetur
           // Prefer upgrade modal for permission errors
           const handled = handleApiError(err);
           if (!handled) {
-            logger.error('Error loading additional data', err);
-          }
+          logger.error('Error loading additional data', err);
+        }
         }
       };
       
@@ -177,7 +177,7 @@ export const useOptimizedHomeData = (userId?: number): UseOptimizedHomeDataRetur
       const errorMessage = err instanceof Error ? err.message : 'Failed to load home data';
       setError(handled ? null : errorMessage);
       if (!handled) {
-        logger.error('Error loading home data', err);
+      logger.error('Error loading home data', err);
       }
     } finally {
       setIsLoading(false);

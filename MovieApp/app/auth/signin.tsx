@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
 export default function SignInScreen() {
-  const { authState, signIn, signInWithGoogle, verifyMfa } = useAuth();
+  const { authState, signIn, verifyMfa } = useAuth();
   const { showError } = useToast();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
@@ -167,52 +167,6 @@ export default function SignInScreen() {
           >
             <Text style={styles.signInButtonText}>
               {isLoading ? 'Signing In...' : 'Sign In'}
-            </Text>
-          </Pressable>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Sign in with Google Button */}
-          <Pressable
-            style={[styles.googleButton, isLoading && styles.disabledButton]}
-            onPress={async () => {
-              setIsLoading(true);
-              try {
-                await Haptics.selectionAsync();
-                
-                const result = await signInWithGoogle();
-                
-                if (result.success) {
-                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  router.replace('/');
-                } else if (result.requiresMfa) {
-                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                  setMfaCode(['', '', '', '', '', '']);
-                  setShowMfaModal(true);
-                  setTimeout(() => {
-                    mfaInputRefs.current[0]?.focus();
-                  }, 100);
-                } else {
-                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                  showError(result.error || 'Google sign in failed');
-                }
-              } catch (error) {
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                showError('An error occurred during Google sign in');
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            disabled={isLoading}
-          >
-            <Ionicons name="logo-google" size={20} color="#fff" style={styles.googleIcon} />
-            <Text style={styles.googleButtonText}>
-              {isLoading ? 'Signing In...' : 'Sign in with Google'}
             </Text>
           </Pressable>
 

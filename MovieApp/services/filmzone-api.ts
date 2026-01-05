@@ -130,7 +130,7 @@ class FilmZoneApi {
         }
       }
     }
-
+    
     const config: RequestInit = {
       headers: this.getHeaders(token),
       ...options,

@@ -32,39 +32,39 @@ export default function RootLayout() {
       <LanguageProvider>
         <ThemeProvider>
           <UpgradeModalProvider>
-            <AuthProvider>
-              <SavedMoviesProvider>
-                <NotificationProvider>
-                  <ApiProvider>
-                    <ToastProvider>
-                      <Stack>
-                        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                        <Stack.Screen name="auth/signin" options={{ headerShown: false }} />
-                        <Stack.Screen name="auth/signup" options={{ headerShown: false }} />
-                        <Stack.Screen name="auth/forgot" options={{ headerShown: false }} />
-                        <Stack.Screen name="auth/mfa-verify" options={{ headerShown: false }} />
-                        <Stack.Screen name="details/movie/[id]" options={{ headerShown: false }} />
-                        <Stack.Screen name="details/series/[id]" options={{ headerShown: false }} />
-                        <Stack.Screen name="profile" options={{ headerShown: false }} />
-                        <Stack.Screen name="about-us" options={{ headerShown: false }} />
-                        <Stack.Screen name="help-center" options={{ headerShown: false }} />
-                        <Stack.Screen name="contacts" options={{ headerShown: false }} />
-                        <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
-                        <Stack.Screen name="actors" options={{ headerShown: false }} />
-                        <Stack.Screen name="actor/[id]" options={{ headerShown: false }} />
-                        <Stack.Screen name="category/[genre]" options={{ headerShown: false }} />
-                        <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
-                        <Stack.Screen name="moviebox" options={{ headerShown: false }} />
-                        <Stack.Screen name="+not-found" />
-                      </Stack>
+          <AuthProvider>
+            <SavedMoviesProvider>
+              <NotificationProvider>
+                <ApiProvider>
+                  <ToastProvider>
+                    <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/signin" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/signup" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/forgot" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/mfa-verify" options={{ headerShown: false }} />
+                <Stack.Screen name="details/movie/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="details/series/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen name="about-us" options={{ headerShown: false }} />
+                <Stack.Screen name="help-center" options={{ headerShown: false }} />
+                <Stack.Screen name="contacts" options={{ headerShown: false }} />
+                <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
+                <Stack.Screen name="actors" options={{ headerShown: false }} />
+                <Stack.Screen name="actor/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="category/[genre]" options={{ headerShown: false }} />
+                <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="moviebox" options={{ headerShown: false }} />
+                <Stack.Screen name="+not-found" />
+                    </Stack>
 
                       <UpgradeRequiredModal onUpgrade={() => router.push('/moviebox')} />
-                      <StatusBar style="auto" />
-                    </ToastProvider>
-                  </ApiProvider>
-                </NotificationProvider>
-              </SavedMoviesProvider>
-            </AuthProvider>
+                    <StatusBar style="auto" />
+                  </ToastProvider>
+                </ApiProvider>
+              </NotificationProvider>
+            </SavedMoviesProvider>
+          </AuthProvider>
           </UpgradeModalProvider>
         </ThemeProvider>
       </LanguageProvider>

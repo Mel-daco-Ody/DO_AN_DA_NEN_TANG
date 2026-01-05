@@ -94,9 +94,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               if (!Array.isArray(parsedState.permissions)) {
                 parsedState.permissions = [];
               }
-              // Restore token to API client
+              // Restore token & refreshToken to API client
               movieAppApi.setToken(parsedState.token);
               filmzoneApi.setToken(parsedState.token);
+              // Đảm bảo filmzoneApi có refreshToken để gọi /login/auth/refresh sau này
+              if (parsedState.refreshToken) {
+                filmzoneApi.setRefreshToken(parsedState.refreshToken);
+              }
               setAuthState(parsedState);
               console.log('AuthContext: Auth state restored from storage');
             } else {
@@ -782,7 +786,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return true;
     } catch (error) {
       console.error('refreshUserPermissions failed:', error);
-      return false;
+    return false;
     }
   };
 

@@ -271,7 +271,27 @@ export default function ProfileScreen() {
         const response = await (movieAppApi as any).getOverviewStats(authState.user.userID.toString());
         
         if (response.success && response.data) {
-          setOverviewStats(response.data);
+          // Preserve watchedFilms, filmsWatched, latestComments, commentsCount
+          setOverviewStats((prev: any) => {
+            const prevWatchedFilms = prev?.watchedFilms ?? [];
+            const prevFilmsWatched =
+              prev?.filmsWatched !== undefined
+                ? prev.filmsWatched
+                : (prevWatchedFilms?.length || 0);
+            const prevLatestComments = prev?.latestComments ?? [];
+            const prevCommentsCount =
+              prev?.commentsCount !== undefined
+                ? prev.commentsCount
+                : (prevLatestComments?.length || 0);
+
+            return {
+              ...response.data,
+              watchedFilms: prevWatchedFilms,
+              filmsWatched: prevFilmsWatched,
+              latestComments: prevLatestComments,
+              commentsCount: prevCommentsCount,
+            };
+          });
         }
       } catch (error) {
       }
@@ -281,29 +301,57 @@ export default function ProfileScreen() {
   // Load overview stats
   useEffect(() => {
     const loadOverviewStats = async () => {
+      console.log('Profile Overview: loadOverviewStats called', {
+        activeTab,
+        hasUser: !!authState.user,
+        userId: authState.user?.userID,
+      });
+      
       if (activeTab === 'overview' && authState.user && authState.user.userID) {
+        console.log('Profile Overview: Starting to load stats...');
         setIsLoadingStats(true);
         try {
           // Load watch progress (films watched)
           let watchedFilms: any[] = [];
           try {
+            console.log('Profile Overview: Calling getWatchProgressByUserId', authState.user.userID);
             const watchProgressResponse = await filmzoneApi.getWatchProgressByUserId(authState.user.userID);
-            const progressOk = (watchProgressResponse as any).success === true || (watchProgressResponse.errorCode >= 200 && watchProgressResponse.errorCode < 300);
+            console.log('Profile Overview: getWatchProgressByUserId response', {
+              errorCode: watchProgressResponse.errorCode,
+              success: (watchProgressResponse as any).success,
+              hasData: !!watchProgressResponse.data,
+              errorMessage: watchProgressResponse.errorMessage,
+            });
             
-            if (progressOk && watchProgressResponse.data) {
+            // 404 means no watch progress yet (not an error), 200-299 means success
+            const progressOk = watchProgressResponse.errorCode === 404 || 
+                              (watchProgressResponse.errorCode >= 200 && watchProgressResponse.errorCode < 300);
+            
+            if (watchProgressResponse.errorCode === 404) {
+              console.log('Profile Overview: No watch progress found (404) - user has not watched any movies yet');
+              watchedFilms = []; // Empty array is fine, UI will show "No films watched yet"
+            } else if (progressOk && watchProgressResponse.data) {
               const progressList = Array.isArray(watchProgressResponse.data) ? watchProgressResponse.data : [watchProgressResponse.data];
+              console.log('Profile Overview: watch progress raw list', JSON.stringify(progressList, null, 2));
               
-              // Filter: Only consider movies that have been watched at least 80% (considered as "watched")
+              // Filter: Only consider movies that have been watched at least 2% (considered as "watched")
               const watchedProgressList = progressList.filter((p: any) => {
-                if (!p.positionSeconds || !p.durationSeconds || p.durationSeconds === 0) {
-                  return false; // Skip if no valid progress data
+                // Nếu backend không trả durationSeconds, nhưng có positionSeconds > 0,
+                // vẫn coi là đã xem (không tính % được nhưng user đã từng xem).
+                if (!p.positionSeconds || p.positionSeconds <= 0) {
+                  return false;
+                }
+                if (!p.durationSeconds || p.durationSeconds === 0) {
+                  return true;
                 }
                 const progressPercentage = (p.positionSeconds / p.durationSeconds) * 100;
-                return progressPercentage >= 80; // Only movies watched >= 80% are considered "watched"
+                return progressPercentage >= 2; // Only movies watched >= 2% are considered "watched"
               });
+              console.log('Profile Overview: watched progress list length', watchedProgressList.length);
               
               // Get unique movie IDs from watched movies
               const uniqueMovieIds = [...new Set(watchedProgressList.map((p: any) => p.movieID).filter(Boolean))];
+              console.log('Profile Overview: unique watched movie IDs', uniqueMovieIds);
               
               // Fetch movie info for each unique movie
               watchedFilms = await Promise.all(
@@ -343,9 +391,24 @@ export default function ProfileScreen() {
                   const dateB = new Date(b.lastWatchedAt || 0).getTime();
                   return dateB - dateA;
                 });
+            } else if (watchProgressResponse.errorCode >= 500) {
+              // Server error (503 timeout, 500, etc.) - log but don't fail completely
+              console.warn('Profile Overview: Watch progress API server error', {
+                errorCode: watchProgressResponse.errorCode,
+                errorMessage: watchProgressResponse.errorMessage,
+              });
+              watchedFilms = []; // Empty array, UI will show empty state
+            } else {
+              // Other errors (400, 401, 403, etc.)
+              console.warn('Profile Overview: Watch progress API error', {
+                errorCode: watchProgressResponse.errorCode,
+                errorMessage: watchProgressResponse.errorMessage,
+              });
+              watchedFilms = []; // Empty array, UI will show empty state
             }
           } catch (err) {
-            console.warn('Failed to load watch progress:', err);
+            console.warn('Profile Overview: Failed to load watch progress (exception):', err);
+            watchedFilms = []; // Ensure empty array on exception
           }
 
           // Load comments from backend API
@@ -389,6 +452,12 @@ export default function ProfileScreen() {
             );
           }
 
+          // Log final watchedFilms before setting state
+          console.log('Profile Overview: Final watchedFilms', {
+            count: watchedFilms.length,
+            movieIds: watchedFilms.map((f: any) => f.id),
+          });
+
           // Load other stats from mock API (if needed)
           try {
             const { movieAppApi } = await import('../services/mock-api');
@@ -402,6 +471,10 @@ export default function ProfileScreen() {
                 watchedFilms: watchedFilms,
                 filmsWatched: watchedFilms.length,
               });
+              console.log('Profile Overview: Stats set with mock API data', {
+                filmsWatched: watchedFilms.length,
+                commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : (response.data.commentsCount || 0),
+              });
             } else {
               // If mock API fails, still set comments and watched films
               setOverviewStats({
@@ -409,6 +482,10 @@ export default function ProfileScreen() {
                 commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : 0,
                 watchedFilms: watchedFilms,
                 filmsWatched: watchedFilms.length,
+              });
+              console.log('Profile Overview: Stats set without mock API', {
+                filmsWatched: watchedFilms.length,
+                commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : 0,
               });
             }
           } catch (error) {
@@ -419,12 +496,22 @@ export default function ProfileScreen() {
               watchedFilms: watchedFilms,
               filmsWatched: watchedFilms.length,
             });
+            console.log('Profile Overview: Stats set after mock API exception', {
+              filmsWatched: watchedFilms.length,
+              commentsCount: latestComments.length > 0 ? commentsResponse.data?.length || 0 : 0,
+            });
           }
         } catch (error) {
           console.error('Error loading overview stats:', error);
         } finally {
           setIsLoadingStats(false);
         }
+      } else {
+        console.log('Profile Overview: loadOverviewStats skipped - conditions not met', {
+          activeTab,
+          hasUser: !!authState.user,
+          userId: authState.user?.userID,
+        });
       }
     };
 
@@ -560,6 +647,11 @@ export default function ProfileScreen() {
       }
     };
 
+    console.log('Profile Overview: useEffect triggered', {
+      activeTab,
+      hasUser: !!authState.user,
+      userId: authState.user?.userID,
+    });
     loadOverviewStats();
     loadBillingHistory();
     // Reset expand state when switching tabs
@@ -1176,12 +1268,13 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
                 
-                <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
+                {/* Films Watched Stat Card - Commented out */}
+                {/* <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
                   <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Films Watched</Text>
                   <Text style={styles.overviewStatFilmValue}>
                     {overviewStats?.filmsWatched !== undefined ? overviewStats.filmsWatched : (overviewStats?.watchedFilms?.length || 0)}
                   </Text>
-                </View>
+                </View> */}
                 
                 <View style={[styles.overviewStatCard, { backgroundColor: theme.colors.surface }]}>
                   <Text style={[styles.overviewStatTitle, { color: theme.colors.text }]}>Comments</Text>
@@ -1191,15 +1284,9 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* Films Watched List */}
-              <View style={styles.overviewSection}>
+              {/* Films Watched List - Commented out */}
+              {/* <View style={styles.overviewSection}>
                 <Text style={[styles.overviewSectionTitle, { color: theme.colors.text }]}>Films Watched</Text>
-                <View style={styles.emptyState}>
-                  <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-                    This feature will be added in a later update.
-                  </Text>
-                </View>
-                {/* 
                 {overviewStats?.watchedFilms && overviewStats.watchedFilms.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     {overviewStats.watchedFilms.map((film: any, index: number) => (
@@ -1241,8 +1328,7 @@ export default function ProfileScreen() {
                     <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No films watched yet</Text>
                   </View>
                 )}
-                */}
-              </View>
+              </View> */}
 
               {/* Latest Comments */}
               <View style={styles.overviewSection}>
@@ -1656,24 +1742,24 @@ export default function ProfileScreen() {
               style={({ pressed }) => [styles.dangerBtn, pressed && { opacity: 0.9 }]}
               onPress={() => {
                 guardAction(SUBSCRIPTION_CANCEL, () => {
-                  Alert.alert(
-                    'Cancel Subscription',
-                    'Are you sure you want to cancel your subscription? Paid plans will be cancelled and you will return to the Starter plan.',
-                    [
-                      { text: 'Keep Subscription', style: 'cancel' },
-                      { 
-                        text: 'Cancel Subscription', 
-                        style: 'destructive',
-                        onPress: async () => {
-                          try {
-                            const userId = authState.user?.userID;
-                            if (!userId) {
-                              Alert.alert('Error', 'Missing user info. Please sign in again.');
-                              return;
-                            }
+                Alert.alert(
+                  'Cancel Subscription',
+                  'Are you sure you want to cancel your subscription? Paid plans will be cancelled and you will return to the Starter plan.',
+                  [
+                    { text: 'Keep Subscription', style: 'cancel' },
+                    { 
+                      text: 'Cancel Subscription', 
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          const userId = authState.user?.userID;
+                          if (!userId) {
+                            Alert.alert('Error', 'Missing user info. Please sign in again.');
+                            return;
+                          }
 
-                            // Call cancel subscription API
-                            const cancelRes = await filmzoneApi.cancelSubscription(userId);
+                          // Call cancel subscription API
+                          const cancelRes = await filmzoneApi.cancelSubscription(userId);
                           const cancelOk = (cancelRes as any).success === true || (cancelRes.errorCode >= 200 && cancelRes.errorCode < 300);
                           if (!cancelOk) {
                             Alert.alert('Error', cancelRes.errorMessage || 'Failed to cancel subscription.');

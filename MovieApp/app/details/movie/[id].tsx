@@ -236,6 +236,11 @@ export default function MovieDetailsScreen() {
         }
         // Context is already updated, UI will automatically reflect the change
       } catch (error) {
+        // Don't show error if it's a permission denied error (upgrade modal already shown)
+        if (error instanceof Error && error.message.includes('Permission denied')) {
+          console.log('MovieDetail: Permission denied, upgrade modal already shown');
+          return;
+        }
         console.error('MovieDetail: Error toggling saved status:', error);
         showError('Failed to update your movie list');
       }
@@ -251,33 +256,33 @@ export default function MovieDetailsScreen() {
       return;
     }
     
-    const movieId = parseInt(id as string);
-    const userId = authState.user.userID;
+      const movieId = parseInt(id as string);
+      const userId = authState.user.userID;
     
     // Determine which permission is needed (create or update)
     const requiredPermission = userRating?.userRatingID ? RATING_UPDATE : RATING_CREATE;
     
     guardAction(requiredPermission, async () => {
       try {
-        // First time: CreateUserRating. Next time: UpdateUserRating.
-        const response = userRating?.userRatingID
-          ? await filmzoneApi.updateUserRating({
-              userRatingID: userRating.userRatingID,
-              userID: userId,
-              movieID: movieId,
-              rating: stars,
-            })
-          : await filmzoneApi.createUserRating({ userID: userId, movieID: movieId, rating: stars });
+      // First time: CreateUserRating. Next time: UpdateUserRating.
+      const response = userRating?.userRatingID
+        ? await filmzoneApi.updateUserRating({
+            userRatingID: userRating.userRatingID,
+            userID: userId,
+            movieID: movieId,
+            rating: stars,
+          })
+        : await filmzoneApi.createUserRating({ userID: userId, movieID: movieId, rating: stars });
 
-        const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
-        if (ok && response.data) {
-          setUserRating({ ...response.data, stars: (response.data as any).stars ?? (response.data as any).rating ?? stars });
+      const ok = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
+      if (ok && response.data) {
+        setUserRating({ ...response.data, stars: (response.data as any).stars ?? (response.data as any).rating ?? stars });
           showSuccess('Rating saved successfully!');
-        }
-      } catch (error) {
-        console.error('Error adding rating:', error);
-        showError('Failed to save rating. Please try again.');
       }
+    } catch (error) {
+      console.error('Error adding rating:', error);
+        showError('Failed to save rating. Please try again.');
+    }
     });
   };
 
@@ -428,14 +433,14 @@ export default function MovieDetailsScreen() {
     
     const userID = authState.user.userID; // Store userID to avoid null check issues in callback
     guardAction(COMMENT_CREATE, async () => {
-      try {
-        const response = await filmzoneApi.createComment({
-          movieID: parseInt(id as string),
+    try {
+      const response = await filmzoneApi.createComment({
+        movieID: parseInt(id as string),
           userID: userID,
-          content: text,
-          parentID: parentCommentID,
-          likeCount: 0,
-        });
+        content: text,
+        parentID: parentCommentID,
+        likeCount: 0,
+      });
       
       const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
       if (responseOk) {
@@ -544,12 +549,12 @@ export default function MovieDetailsScreen() {
                 onPressOut={() => setIsPlayPressed(false)}
                 onPress={() => {
                   guardAction(MOVIE_WATCH_STREAM, () => {
-                    const movieId = id as string;
-                    if (!movieId || isNaN(parseInt(movieId))) {
-                      showError('Invalid movie ID');
-                      return;
-                    }
-                    router.push({ pathname: '/player/[id]', params: { id: movieId, title: safe(title), type: 'movie' } });
+                  const movieId = id as string;
+                  if (!movieId || isNaN(parseInt(movieId))) {
+                    showError('Invalid movie ID');
+                    return;
+                  }
+                  router.push({ pathname: '/player/[id]', params: { id: movieId, title: safe(title), type: 'movie' } });
                   });
                 }}
               >
@@ -710,22 +715,22 @@ export default function MovieDetailsScreen() {
               onPress={async () => {
                 const text = commentText.trim();
                 if (!text) return;
-
+                
                 if (!authState.user || !authState.user.userID) {
                   showWarning('Please login to comment');
                   return;
                 }
-
+                
                 const userID = authState.user.userID; // Store userID to avoid null check issues in callback
                 // Keep UI visible; only gate when user clicks "Post"
                 guardAction(COMMENT_CREATE, async () => {
-                  try {
-                    const response = await filmzoneApi.createComment({
-                      movieID: parseInt(id as string),
+                try {
+                  const response = await filmzoneApi.createComment({
+                    movieID: parseInt(id as string),
                       userID: userID,
-                      content: text,
-                      likeCount: 0,
-                    });
+                    content: text,
+                    likeCount: 0,
+                  });
                   
                   const responseOk = (response as any).success === true || (response.errorCode >= 200 && response.errorCode < 300);
                   if (responseOk) {
@@ -847,7 +852,7 @@ export default function MovieDetailsScreen() {
                       </View>
                     </View>
                   ) : (
-                    <Text style={styles.commentText}>{c.content}</Text>
+                  <Text style={styles.commentText}>{c.content}</Text>
                   )}
                   {!isReply && (
                     <View style={styles.commentActions}>
