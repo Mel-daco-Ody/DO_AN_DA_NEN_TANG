@@ -1096,13 +1096,15 @@ export default function ProfileScreen() {
 
         await Haptics.selectionAsync();
 
+        // Lấy thông tin hiện tại: newUserName = userName hiện tại, firstName/lastName từ user, gender/dateOfBirth = empty string
         const uploadRes = await filmzoneApi.updateUserProfileAvatar({
           userID: user.userID,
           avatarUri: newAvatarUri,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          gender: user.gender,
-          dateOfBirth: user.dateOfBirth,
+          newUserName: user.userName || user.name || '',
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          gender: '',
+          dateOfBirth: '',
         } as any);
 
         const uploadOk = uploadRes.success === true || 

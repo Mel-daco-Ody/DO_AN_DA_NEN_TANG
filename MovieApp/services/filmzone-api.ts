@@ -478,12 +478,13 @@ class FilmZoneApi {
   async updateUserProfileAvatar(params: {
     userID: number;
     avatarUri: string;
+    newUserName?: string;
     firstName?: string;
     lastName?: string;
-    gender?: string;
-    dateOfBirth?: string;
+    gender?: string | null;
+    dateOfBirth?: string | null;
   }): Promise<FilmZoneResponse<UserDTO>> {
-    const { userID, avatarUri, firstName, lastName, gender, dateOfBirth } = params;
+    const { userID, avatarUri, newUserName, firstName, lastName, gender, dateOfBirth } = params;
 
     if (!userID || !avatarUri) {
       return {
@@ -495,10 +496,12 @@ class FilmZoneApi {
 
     const formData = new FormData();
     formData.append('userID', String(userID));
+    if (newUserName) formData.append('newUserName', newUserName);
     if (firstName) formData.append('firstName', firstName);
     if (lastName) formData.append('lastName', lastName);
-    if (gender) formData.append('gender', gender);
-    if (dateOfBirth) formData.append('dateOfBirth', dateOfBirth);
+    // Gửi string (empty string nếu null/undefined)
+    formData.append('gender', gender || '');
+    formData.append('dateOfBirth', dateOfBirth || '');
 
     // React Native / Expo file object
     formData.append('avatar', {
