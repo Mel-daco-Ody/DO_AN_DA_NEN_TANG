@@ -373,16 +373,16 @@ export default function MovieBoxScreen() {
           <View style={styles.errorContainer}>
             {error.includes(t('moviebox.network_error_title')) ? (
               <NetworkErrorState 
-                title={t('moviebox.network_error_title')}
-                subtitle={t('moviebox.network_error_subtitle')}
-                retryText={t('moviebox.retry')}
+                title={'CONNECTION ERROR'}
+                subtitle={'Vui lòng kiểm tra kết nối internet và thử lại'}
+                retryText={'Reload'}
                 onRetry={retryLoadMovies} 
               />
             ) : (
               <ServerErrorState 
-                title={t('moviebox.server_error_title')}
-                subtitle={t('moviebox.server_error_subtitle')}
-                retryText={t('moviebox.retry')}
+                title={'ERROR'}
+                subtitle={'Server đang gặp trục trặc, bộ phận kỹ thuật đang xử lý.'}
+                retryText={'Reload'}
                 onRetry={retryLoadMovies} 
               />
             )}
@@ -402,29 +402,21 @@ export default function MovieBoxScreen() {
           <View style={styles.emptyStateContainer}>
             {!authState.user ? (
               <LoginRequiredState 
-                title={t('moviebox.login_required_title')}
-                subtitle={t('moviebox.login_required_subtitle')}
-                actionText={t('moviebox.sign_in')}
+                title={'Tính năng VIP'}
+                subtitle={'Bạn cần có tài khoản Vip để sử dụng chức năng này'}
+                actionText={'Đăng nhập ngay'}
                 onLoginPress={() => router.push('/auth/signin')} 
               />
             ) : !canReadSavedMovies ? (
               <MovieBoxEmptyState
-                title={t('moviebox.vip_required_title') || 'Tính năng VIP'}
-                subtitle={t('moviebox.vip_required_subtitle') || 'Nâng cấp tài khoản để lưu và quản lý những bộ phim yêu thích của bạn.'}
-                actionText={t('moviebox.upgrade') || 'Nâng cấp ngay'}
-                onBrowsePress={() => {
-                  guardAction(SAVED_MOVIE_READ, () => {
-                    // This part should ideally not be reached if permission is missing.
-                    // If called, it means the user has permission, so we can retry.
-                    retryLoadMovies();
-                  });
-                }}
+                title={'Tính năng VIP'}
+                subtitle={'Nâng cấp tài khoản để lưu và quản lý những bộ phim yêu thích của bạn.'}
               />
             ) : (
               <MovieBoxEmptyState 
-                title={t('moviebox.empty_title')}
-                subtitle={t('moviebox.empty_subtitle')}
-                actionText={t('moviebox.browse_movies')}
+                title={'MovieBox của bạn hiện đang trống'}
+                subtitle={'Hãy thêm những bộ phim ưu thích của mình vào MovieBox và thưởng thức'}
+                actionText={'Duyệt Phim'}
                 onBrowsePress={() => router.push('/(tabs)')} 
               />
             )}
