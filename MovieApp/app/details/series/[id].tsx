@@ -170,7 +170,7 @@ export default function SeriesDetailsScreen() {
                 if (typeof filmzoneApi.getUserSlimById !== 'function') {
                   console.error(`getUserSlimById is not a function. Available methods:`, Object.keys(filmzoneApi));
                   // Fallback to getUserById
-                  const userResponse = await filmzoneApi.getUserById(userID);
+                const userResponse = await filmzoneApi.getUserById(userID);
                   const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
                   if (userOk && userResponse.data) {
                     userDataMap.set(userID, userResponse.data);
@@ -817,10 +817,10 @@ export default function SeriesDetailsScreen() {
                 <FlatList
                   data={displayEpisodes}
                   keyExtractor={(item) => item.id.toString()}
-                  // Disable scroll to avoid nested VirtualizedList warning (outer ScrollView handles scrolling)
-                  scrollEnabled={false}
-                  nestedScrollEnabled={false}
-                  showsVerticalScrollIndicator={false}
+                  // Enable scroll for episodes list with nested scroll support
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
                   renderItem={({ item: episode, index }) => {
               const isLatestWatched = latestWatched && 
                 latestWatched.season === selectedSeason && 
@@ -1245,7 +1245,11 @@ export default function SeriesDetailsScreen() {
               <Text style={[styles.sectionTitle, { marginTop: 16 }]}>
                 {'All Comments'} ({totalCommentsCount})
               </Text>
-              <View style={styles.commentsList}>
+              <ScrollView 
+                style={styles.commentsList}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
                 {sortedParents.length === 0 ? (
                   <Text style={styles.noCommentsText}>{'No comments yet. Be the first to comment!'}</Text>
                 ) : (
@@ -1259,7 +1263,7 @@ export default function SeriesDetailsScreen() {
                     );
                   })
                 )}
-              </View>
+              </ScrollView>
             </>
           );
         })()}

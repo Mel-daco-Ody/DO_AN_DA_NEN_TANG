@@ -132,7 +132,7 @@ export default function MovieDetailsScreen() {
                 if (typeof filmzoneApi.getUserSlimById !== 'function') {
                   console.error(`getUserSlimById is not a function. Available methods:`, Object.keys(filmzoneApi));
                   // Fallback to getUserById
-                  const userResponse = await filmzoneApi.getUserById(userID);
+                const userResponse = await filmzoneApi.getUserById(userID);
                   const userOk = (userResponse as any).success === true || (userResponse.errorCode >= 200 && userResponse.errorCode < 300);
                   if (userOk && userResponse.data) {
                     userDataMap.set(userID, userResponse.data);

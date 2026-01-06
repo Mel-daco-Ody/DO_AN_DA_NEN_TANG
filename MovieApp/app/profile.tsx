@@ -356,7 +356,7 @@ export default function ProfileScreen() {
     if (activeTab === 'subscription') {
       loadPlans();
     }
-  }, [activeTab, authState.user]);
+  }, [activeTab, authState.user?.userID]);
 
   // Function to refresh overview stats
   const refreshOverviewStats = async () => {
@@ -753,26 +753,7 @@ export default function ProfileScreen() {
     if (activeTab !== 'overview') {
       setExpandComments(false);
     }
-  }, [activeTab, authState.user]);
-
-  // Refresh overview stats when switching to overview tab
-  useEffect(() => {
-    if (activeTab === 'overview' && authState.user) {
-      refreshOverviewStats();
-    }
-  }, [activeTab]);
-
-  // Refresh overview stats when screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
-      if (activeTab === 'overview' && authState.user) {
-        // Add a small delay to ensure data is updated
-        setTimeout(() => {
-          refreshOverviewStats();
-        }, 100);
-      }
-    }, [activeTab, authState.user])
-  );
+  }, [activeTab, authState.user?.userID]);
 
   // Sync selectedPlan with current subscription
   useEffect(() => {
@@ -1094,18 +1075,18 @@ export default function ProfileScreen() {
           return;
         }
 
-        await Haptics.selectionAsync();
+          await Haptics.selectionAsync();
 
         // Lấy thông tin hiện tại: newUserName = userName hiện tại, firstName/lastName từ user, gender/dateOfBirth = empty string
         const uploadRes = await filmzoneApi.updateUserProfileAvatar({
-          userID: user.userID,
-          avatarUri: newAvatarUri,
+            userID: user.userID,
+            avatarUri: newAvatarUri,
           newUserName: user.userName || user.name || '',
           firstName: user.firstName || '',
           lastName: user.lastName || '',
           gender: '',
           dateOfBirth: '',
-        } as any);
+          } as any);
 
         const uploadOk = uploadRes.success === true || 
           (uploadRes.errorCode >= 200 && uploadRes.errorCode < 300);
@@ -1129,7 +1110,7 @@ export default function ProfileScreen() {
               setAvatar(cloudinaryAvatarUrl);
               
               // Sync với AuthContext
-              updateUser({
+      updateUser({
                 avatar: cloudinaryAvatarUrl,
                 profilePicture: cloudinaryAvatarUrl,
               });
