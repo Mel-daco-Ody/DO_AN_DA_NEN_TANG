@@ -314,9 +314,28 @@ export default function VideoPlayerScreen() {
       });
       
       // Use different API endpoint for movies vs episodes
-      const response = isEpisode 
-        ? await filmzoneApi.getEpisodeSubtitlesBySourceID(numericSourceId)
-        : await filmzoneApi.getMovieSubtitlesBySourceID(numericSourceId);
+      let response;
+      if (isEpisode) {
+        console.log('VideoPlayerScreen: loadSubtitles - calling getEpisodeSubtitlesBySourceID with sourceID:', numericSourceId);
+        response = await filmzoneApi.getEpisodeSubtitlesBySourceID(numericSourceId);
+        console.log('VideoPlayerScreen: loadSubtitles - episode subtitles API response:', {
+          errorCode: response.errorCode,
+          errorMessage: response.errorMessage,
+          success: response.success,
+          hasData: !!response.data,
+          dataLength: Array.isArray(response.data) ? response.data.length : 'not array'
+        });
+      } else {
+        console.log('VideoPlayerScreen: loadSubtitles - calling getMovieSubtitlesBySourceID with sourceID:', numericSourceId);
+        response = await filmzoneApi.getMovieSubtitlesBySourceID(numericSourceId);
+        console.log('VideoPlayerScreen: loadSubtitles - movie subtitles API response:', {
+          errorCode: response.errorCode,
+          errorMessage: response.errorMessage,
+          success: response.success,
+          hasData: !!response.data,
+          dataLength: Array.isArray(response.data) ? response.data.length : 'not array'
+        });
+      }
       console.log('VideoPlayerScreen: loadSubtitles - API response:', response);
       
       // Handle both cases: data is array or single object, and empty array
@@ -664,10 +683,17 @@ export default function VideoPlayerScreen() {
             }
             
             if (selectedSource?.sourceUrl) {
-              const episodeSourceId = selectedSource.episodeSourceID;
+              // Try multiple possible field names for episode source ID
+              const episodeSourceId = selectedSource.episodeSourceID || selectedSource.episodeSourceId || selectedSource.id || selectedSource.sourceID || selectedSource.sourceId;
               console.log('VideoPlayerScreen: episode source selected', {
                 episodeSourceId,
+                episodeSourceID: selectedSource.episodeSourceID,
+                episodeSourceId_field: selectedSource.episodeSourceId,
+                id: selectedSource.id,
+                sourceID: selectedSource.sourceID,
+                sourceId: selectedSource.sourceId,
                 sourceUrl: selectedSource.sourceUrl,
+                selectedSourceKeys: Object.keys(selectedSource),
                 selectedSource
               });
               const sourceUrl = selectedSource.sourceUrl;
@@ -1650,10 +1676,12 @@ export default function VideoPlayerScreen() {
                             const langCode = subtitle.language?.toLowerCase() || 'vi';
                             const langName = subtitle.subTitleName || subtitle.language || 'Unknown';
                             const isSelected = selectedSubtitle === langCode && selectedSubtitleLanguage === (subtitle.language || subtitle.subTitleName);
+                            // Support both movieSubTitleID (for movies) and episodeSubTitleID (for episodes)
+                            const subtitleId = subtitle.episodeSubTitleID || subtitle.movieSubTitleID || subtitle.subTitleName;
                             
                             return (
                               <Pressable
-                                key={subtitle.movieSubTitleID || subtitle.subTitleName}
+                                key={subtitleId}
                                 style={({ pressed }) => [
                                   styles.subtitleMenuItem,
                                   isSelected && styles.subtitleMenuItemActive,

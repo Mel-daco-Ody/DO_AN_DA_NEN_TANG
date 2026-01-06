@@ -949,11 +949,19 @@ class FilmZoneApi {
   }
 
   /**
-   * GET /movie/EpisodeSubTitle/GetEpisodeSubTitlesBySourceID/{sourceId}
+   * GET /api/MovieSubTitle/GetAllSubTitlesByEpisodeId/episode/GetAllSubTitlesBySourceID/{sourceID}
    * Lấy danh sách subtitle theo episode sourceID
    */
   async getEpisodeSubtitlesBySourceID(sourceId: number): Promise<FilmZoneResponse<any[]>> {
-    return this.request<any[]>(`/movie/EpisodeSubTitle/GetEpisodeSubTitlesBySourceID/${sourceId}`);
+    return this.request<any[]>(`/api/MovieSubTitle/GetAllSubTitlesByEpisodeId/episode/GetAllSubTitlesBySourceID/${sourceId}`);
+  }
+
+  /**
+   * GET /api/MovieSubTitle/GetEpisodeSubTitleByID/episode/GetEpisodeSubTitleByID/{episodeSubTitleID}
+   * Lấy thông tin subtitle cụ thể theo episodeSubTitleID
+   */
+  async getEpisodeSubTitleByID(episodeSubTitleID: number): Promise<FilmZoneResponse<any>> {
+    return this.request<any>(`/api/MovieSubTitle/GetEpisodeSubTitleByID/episode/GetEpisodeSubTitleByID/${episodeSubTitleID}`);
   }
 
   // ==================== WATCH PROGRESS APIs ====================
